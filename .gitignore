@@ -1,3 +1,8 @@
+
+.vscode/
+fuse-3.17.4/
+testfs/
+
 # Prerequisites
 *.d
 
