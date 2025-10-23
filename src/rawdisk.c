@@ -31,14 +31,20 @@ int open_disk(char* path)
     disk_name = (char*)malloc(sizeof(char) * strlen(path));
     disk_fd = fd;
     memcpy(disk_name, path, strlen(path)); // copy to local var
-
+    return 0;
 }
 
 int close_disk()
 {
+    if(disk_name == NULL)
+    {
+        return -RAW_DISK_ERROR_UNOPENED;
+    }
+
     free(disk_name);
     disk_name = NULL;
     close(disk_fd);
+    return 0;
 }
 
 int read_block_raw(char* buffer, unsigned int block_number)
