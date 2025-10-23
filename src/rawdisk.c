@@ -8,11 +8,11 @@ static int disk_fd = 0;
 
 const char* raw_disk_error_to_string(int err) {
     switch (err) {
-        case RAW_DISK_ERROR_UNOPENED:
+        case -RAW_DISK_ERROR_UNOPENED:
             return "RAW_DISK_ERROR_UNOPENED: Disk not opened";
-        case RAW_DISK_ERROR_OUT_OF_BOUNDS:
+        case -RAW_DISK_ERROR_OUT_OF_BOUNDS:
             return "RAW_DISK_ERROR_OUT_OF_BOUNDS: Access beyond disk size";
-        case RAW_DISK_ERROR_SYSTEM:
+        case -RAW_DISK_ERROR_SYSTEM:
             return "RAW_DISK_ERROR_SYSTEM: Underlying system I/O error";
         case 0:
             return "RAW_DISK: OK";
@@ -23,10 +23,10 @@ const char* raw_disk_error_to_string(int err) {
 
 int open_disk(char* path)
 {
-    int fd = open(disk_name, O_RDWR | O_DIRECT);
+    int fd = open(path, O_RDWR | O_DIRECT);
     if(fd < 0)
     {
-        return fd; 
+        return -RAW_DISK_ERROR_SYSTEM; 
     }
     disk_name = (char*)malloc(sizeof(char) * strlen(path));
     disk_fd = fd;
