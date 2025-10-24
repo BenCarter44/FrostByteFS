@@ -79,7 +79,12 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = strlen(options.contents);
-	} else
+	} else if (strcmp(path, "/extra_file.txt") == 0) {
+		stbuf->st_mode = S_IFREG | 0444;
+		stbuf->st_nlink = 1;
+		stbuf->st_size = strnlen("This is an extra file.\n", 1024);
+	}
+	else
 		res = -ENOENT;
 
 	return res;
@@ -99,13 +104,14 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, ".", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 	filler(buf, "..", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 	filler(buf, options.filename, NULL, 0, FUSE_FILL_DIR_DEFAULTS);
+	filler(buf, "extra_file", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 
 	return 0;
 }
 
 static int hello_open(const char *path, struct fuse_file_info *fi)
 {
-	if (strcmp(path+1, options.filename) != 0)
+	if ((strcmp(path+1, options.filename) != 0) && (strcmp(path, "/extra_file.txt") != 0))
 		return -ENOENT;
 
 	if ((fi->flags & O_ACCMODE) != O_RDONLY)
@@ -119,18 +125,30 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 {
 	size_t len;
 	(void) fi;
-	if(strcmp(path+1, options.filename) != 0)
-		return -ENOENT;
-
-	len = strlen(options.contents);
-	if (offset < len) {
-		if (offset + size > len)
+	if(strcmp(path+1, options.filename) == 0)
+	{
+		len = strlen(options.contents);
+		if (offset < len) {
+			if (offset + size > len)
 			size = len - offset;
-		memcpy(buf, options.contents + offset, size);
-	} else
-		size = 0;
+			memcpy(buf, options.contents + offset, size);
+		} else
+			size = 0;
+	
+		return size;
+	} else if (strcmp(path, "/extra_file.txt") == 0) {
+		const char *extra_contents = "This is an extra file.\n";
+		len = strnlen(extra_contents, 1024);
+		if (offset < len) {
+			if (offset + size > len)
+				size = len - offset;
+			memcpy(buf, extra_contents + offset, size);
+		} else
+			size = 0;
 
-	return size;
+		return size;
+	}
+	return -ENOENT;
 }
 
 static const struct fuse_operations hello_oper = {
