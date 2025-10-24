@@ -104,7 +104,7 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, ".", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 	filler(buf, "..", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 	filler(buf, options.filename, NULL, 0, FUSE_FILL_DIR_DEFAULTS);
-	filler(buf, "extra_file", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
+	filler(buf, "extra_file.txt", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 
 	return 0;
 }
