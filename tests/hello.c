@@ -84,8 +84,12 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_nlink = 1;
 		stbuf->st_size = strnlen("This is an extra file.\n", 1024);
 	}
-	else
-		res = -ENOENT;
+	else {
+		// write only file
+		stbuf->st_mode = S_IFREG | 0666;  
+		stbuf->st_nlink = 1;
+		stbuf->st_size = 0;
+	}
 
 	return res;
 }
@@ -111,21 +115,14 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int hello_open(const char *path, struct fuse_file_info *fi)
 {
-
-	if ((fi->flags & O_ACCMODE) == O_WRONLY) {
-		// if ((strcmp(path+1, options.filename) == 0) || (strcmp(path, "/extra_file.txt") == 0))
-		// 	return -EACCES;
-		return 0;
-	}
-
-	if ((strcmp(path+1, options.filename) != 0) && (strcmp(path, "/extra_file.txt") != 0))
-		return -ENOENT;
-
-	if ((fi->flags & O_ACCMODE) != O_RDONLY)
-		return -EACCES;
-
-
-	return 0;
+    if (strcmp(path+1, options.filename) == 0 || strcmp(path, "/extra_file.txt") == 0) {
+        if ((fi->flags & O_ACCMODE) != O_RDONLY)
+            return -EACCES;
+    } else {
+        if ((fi->flags & O_ACCMODE) == O_RDONLY)
+            return -ENOENT;
+    }
+    return 0;
 }
 
 static int hello_read(const char *path, char *buf, size_t size, off_t offset,
