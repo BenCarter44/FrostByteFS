@@ -174,6 +174,29 @@ static int hello_write(const char *path, const char *buf, size_t size,
 	return size;
 }
 
+static int hello_create(const char *path, mode_t mode,
+						struct fuse_file_info *fi)
+{
+	(void) mode;
+	(void) fi;
+
+	printf("[CREATE] File %s created with mode %o\n", path, mode);
+	fflush(stdout);
+
+	return 0;
+}
+
+static int hello_truncate(const char *path, off_t size, struct fuse_file_info *fi)
+{
+    (void) size;
+    (void) fi;
+
+	printf("[TRUNCATE] File %s truncated\n", path);
+	fflush(stdout);
+	return 0;
+
+}
+
 static const struct fuse_operations hello_oper = {
 	.init           = hello_init,
 	.getattr	= hello_getattr,
@@ -181,6 +204,8 @@ static const struct fuse_operations hello_oper = {
 	.open		= hello_open,
 	.read		= hello_read,
 	.write 	    = hello_write,
+	.create     = hello_create,
+	.truncate   = hello_truncate,
 };
 
 static void show_help(const char *progname)
