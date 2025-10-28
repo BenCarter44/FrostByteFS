@@ -3,7 +3,7 @@
  * for the 'frost' filesystem.
  */
 
-#include "include/callbacks.h"
+#include "callbacks.h"
 
 // Define the global options struct
 struct options options;

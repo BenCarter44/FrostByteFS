@@ -3,7 +3,7 @@
  * It handles command-line option parsing and starting the FUSE main loop.
  */
 
-#include "include/callbacks.h"
+#include "callbacks.h"
 
 // Define the option-parsing macro
 #define OPTION(t, p)                                \
