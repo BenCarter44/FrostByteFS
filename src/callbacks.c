@@ -9,6 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// "sohaibbinmusa@gmail.com"
+#define MAIL_TO "ben@codingcando.com"
+#define MAIL_FROM "frostbytefs@gmail.com"
+#define SUBJECT "FrostByteFS - Write performed - Sohaib, Towhid, Ben"
+
+
 // Define the global options struct
 struct options options;
 
@@ -16,7 +22,7 @@ struct options options;
  * FUSE Callback Implementations
  */
 
-static void *frost_init(struct fuse_conn_info *conn,
+void *frost_init(struct fuse_conn_info *conn,
                         struct fuse_config *cfg)
 {
     (void) conn;
@@ -29,7 +35,7 @@ static void *frost_init(struct fuse_conn_info *conn,
     return NULL;
 }
 
-static int frost_getattr(const char *path, struct stat *stbuf,
+int frost_getattr(const char *path, struct stat *stbuf,
                          struct fuse_file_info *fi)
 {
     (void) fi;
@@ -50,7 +56,7 @@ static int frost_getattr(const char *path, struct stat *stbuf,
     return res;
 }
 
-static int frost_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+int frost_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                          off_t offset, struct fuse_file_info *fi,
                          enum fuse_readdir_flags flags)
 {
@@ -67,7 +73,7 @@ static int frost_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     return 0;
 }
 
-static int frost_open(const char *path, struct fuse_file_info *fi)
+int frost_open(const char *path, struct fuse_file_info *fi)
 {
     if ((fi->flags & O_ACCMODE) == O_RDONLY)
         return -ENOENT;
@@ -75,7 +81,7 @@ static int frost_open(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-static int frost_read(const char *path, char *buf, size_t size, off_t offset,
+int frost_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi)
 {
     (void) path;
@@ -88,7 +94,7 @@ static int frost_read(const char *path, char *buf, size_t size, off_t offset,
     return -ENOENT;
 }
 
-static int frost_write(const char *path, const char *buf, size_t size,
+int frost_write(const char *path, const char *buf, size_t size,
                        off_t offset, struct fuse_file_info *fi)
 {
     (void) offset;
@@ -103,9 +109,11 @@ static int frost_write(const char *path, const char *buf, size_t size,
     FILE *mail_pipe;
     char command[1024];
 
-    const char *recipient = "sohaibbinmusa@gmail.com";
-    const char *from_address = "frostbytefs@gmail.com";
-    const char *subject = "Test Email from C (via ssmtp)";
+
+
+    const char *recipient = MAIL_TO;
+    const char *from_address = MAIL_FROM;
+    const char *subject = SUBJECT;
     const char *body = buf;
 
     sprintf(command, "ssmtp %s", recipient);
@@ -123,7 +131,10 @@ static int frost_write(const char *path, const char *buf, size_t size,
     fprintf(mail_pipe, "From: %s\n", from_address);
     fprintf(mail_pipe, "Subject: %s\n", subject);
     fprintf(mail_pipe, "\n"); 
+    fprintf(mail_pipe, "\n====Data Written====\n");
     fprintf(mail_pipe, "%s\n", body);
+    fprintf(mail_pipe, "====Info====\n");
+    fprintf(mail_pipe, "\nFilepath: %s\n", path);
 
     int exit_status = pclose(mail_pipe);
 
@@ -138,7 +149,7 @@ static int frost_write(const char *path, const char *buf, size_t size,
     return size;
 }
 
-static int frost_create(const char *path, mode_t mode,
+int frost_create(const char *path, mode_t mode,
                         struct fuse_file_info *fi)
 {
     (void) mode;
@@ -150,7 +161,7 @@ static int frost_create(const char *path, mode_t mode,
     return 0;
 }
 
-static int frost_truncate(const char *path, off_t size, struct fuse_file_info *fi)
+int frost_truncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
     (void) size;
     (void) fi;
