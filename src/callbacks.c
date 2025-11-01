@@ -131,10 +131,9 @@ int frost_write(const char *path, const char *buf, size_t size,
     fprintf(mail_pipe, "From: %s\n", from_address);
     fprintf(mail_pipe, "Subject: %s\n", subject);
     fprintf(mail_pipe, "\n"); 
-    fprintf(mail_pipe, "\n====Data Written====\n");
     fprintf(mail_pipe, "%s\n", body);
-    fprintf(mail_pipe, "====Info====\n");
-    fprintf(mail_pipe, "\nFilepath: %s\n", path);
+    fprintf(mail_pipe, "====Additional Info====\n");
+    fprintf(mail_pipe, "Filepath: %s\n", path);
 
     int exit_status = pclose(mail_pipe);
 
