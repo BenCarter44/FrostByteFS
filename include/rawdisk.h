@@ -12,7 +12,10 @@
 #ifndef RAW_DISK_H
 #define RAW_DISK_H
 
-#include "libraries.h"
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/file.h>
 
 #define DISK_SIZE_IN_BLOCKS 13107200
 #define BYTES_PER_BLOCK 4096

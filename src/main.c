@@ -1,184 +1,62 @@
+/*
+ * This file contains the main() function for the 'frost' filesystem.
+ * It handles command-line option parsing and starting the FUSE main loop.
+ */
 
+#include "callbacks.h"
 
-#include "main.h"
+// Define the option-parsing macro
+#define OPTION(t, p)                                \
+    { t, offsetof(struct options, p), 1 }
 
-// based from passthrough_ll.c but organized.
-
-static const struct fuse_lowlevel_ops lo_oper = {
-	.init		= lo_init, // in runtime
-	.destroy	= lo_destroy, // in runtime
-	.lookup		= lo_lookup, 
-	.mkdir		= lo_mkdir,
-	.mknod		= lo_mknod,
-	.symlink	= lo_symlink,
-	.link		= lo_link,
-	.unlink		= lo_unlink,
-	.rmdir		= lo_rmdir,
-	.rename		= lo_rename,
-	.forget		= lo_forget,
-	.forget_multi	= lo_forget_multi,
-	.getattr	= lo_getattr,
-	.setattr	= lo_setattr,
-	.readlink	= lo_readlink,
-	.opendir	= lo_opendir,
-	.readdir	= lo_readdir,
-	.readdirplus	= lo_readdirplus,
-	.releasedir	= lo_releasedir,
-	.fsyncdir	= lo_fsyncdir,
-	.create		= lo_create,
-	.tmpfile	= lo_tmpfile,
-	.open		= lo_open,
-	.release	= lo_release,
-	.flush		= lo_flush,
-	.fsync		= lo_fsync,
-	.read		= lo_read,
-	.write_buf      = lo_write_buf,
-	.statfs		= lo_statfs,
-	.fallocate	= lo_fallocate,
-	.flock		= lo_flock,
-	.getxattr	= lo_getxattr,
-	.listxattr	= lo_listxattr,
-	.setxattr	= lo_setxattr,
-	.removexattr	= lo_removexattr,
-#ifdef HAVE_COPY_FILE_RANGE
-	.copy_file_range = lo_copy_file_range,
-#endif
-	.lseek		= lo_lseek,
+// Define the option specification
+static const struct fuse_opt option_spec[] = {
+    OPTION("-h", show_help),
+    OPTION("--help", show_help),
+    FUSE_OPT_END
 };
 
-
+// Help function specific to this main file
+static void show_help(const char *progname)
+{
+    printf("usage: %s [options] <mountpoint>\n\n", progname);
+    printf("Filesystem is a write-only example.\n"
+           "Files created will be printed to stdout.\n"
+           "\n");
+}
 
 int main(int argc, char *argv[])
 {
-	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-	struct fuse_session *se;
-	struct fuse_cmdline_opts opts;
-	struct fuse_loop_config *config;
-	struct lo_data lo = { .debug = 0,
-	                      .writeback = 0 };
-	int ret = -1;
+    int ret;
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	/* Don't mask creation mode, kernel already did that */
-	umask(0);
+    /* Set defaults -- we have to use strdup so that
+       fuse_opt_parse can free the defaults if other
+       values are specified */
+    // Note: 'options' is the global struct from callbacks.c
+    // No defaults needed anymore
 
-	pthread_mutex_init(&lo.mutex, NULL);
-	lo.root.next = lo.root.prev = &lo.root;
-	lo.root.fd = -1;
-	lo.cache = CACHE_NORMAL;
+    /* Parse options */
+    if (fuse_opt_parse(&args, &options, option_spec, NULL) == -1)
+        return 1;
 
-	if (fuse_parse_cmdline(&args, &opts) != 0)
-		return 1;
-	if (opts.show_help) {
-		printf("usage: %s [options] <mountpoint>\n\n", argv[0]);
-		fuse_cmdline_help();
-		fuse_lowlevel_help();
-		passthrough_ll_help();
-		ret = 0;
-		goto err_out1;
-	} else if (opts.show_version) {
-		printf("FUSE library version %s\n", fuse_pkgversion());
-		fuse_lowlevel_version();
-		ret = 0;
-		goto err_out1;
-	}
+    /* When --help is specified, first print our own file-system
+       specific help text, then signal fuse_main to show
+       additional help (by adding `--help` to the options again)
+       without usage: line (by setting argv[0] to the empty
+       string) */
+    if (options.show_help) {
+        show_help(argv[0]);
+        assert(fuse_opt_add_arg(&args, "--help") == 0);
+        args.argv[0][0] = '\0';
+    }
 
-	if(opts.mountpoint == NULL) {
-		printf("usage: %s [options] <mountpoint>\n", argv[0]);
-		printf("       %s --help\n", argv[0]);
-		ret = 1;
-		goto err_out1;
-	}
-
-	if (parse_commandline(&args, &lo, NULL)== -1)
-		return 1;
-
-	lo.debug = opts.debug;
-	lo.root.refcount = 2;
-	if (lo.source) {
-		struct stat stat;
-		int res;
-
-		res = lstat(lo.source, &stat);
-		if (res == -1) {
-			fuse_log(FUSE_LOG_ERR, "failed to stat source (\"%s\"): %m\n",
-				 lo.source);
-			exit(1);
-		}
-		if (!S_ISDIR(stat.st_mode)) {
-			fuse_log(FUSE_LOG_ERR, "source is not a directory\n");
-			exit(1);
-		}
-
-	} else {
-		lo.source = strdup("/");
-		if(!lo.source) {
-			fuse_log(FUSE_LOG_ERR, "fuse: memory allocation failed\n");
-			exit(1);
-		}
-	}
-	if (!lo.timeout_set) {
-		switch (lo.cache) {
-		case CACHE_NEVER:
-			lo.timeout = 0.0;
-			break;
-
-		case CACHE_NORMAL:
-			lo.timeout = 1.0;
-			break;
-
-		case CACHE_ALWAYS:
-			lo.timeout = 86400.0;
-			break;
-		}
-	} else if (lo.timeout < 0) {
-		fuse_log(FUSE_LOG_ERR, "timeout is negative (%lf)\n",
-			 lo.timeout);
-		exit(1);
-	}
-
-	lo.root.fd = open(lo.source, O_PATH);
-	if (lo.root.fd == -1) {
-		fuse_log(FUSE_LOG_ERR, "open(\"%s\", O_PATH): %m\n",
-			 lo.source);
-		exit(1);
-	}
-
-	se = fuse_session_new(&args, &lo_oper, sizeof(lo_oper), &lo);
-	if (se == NULL)
-	    goto err_out1;
-
-	if (fuse_set_signal_handlers(se) != 0)
-	    goto err_out2;
-
-	if (fuse_session_mount(se, opts.mountpoint) != 0)
-	    goto err_out3;
-
-	fuse_daemonize(opts.foreground);
-
-	/* Block until ctrl+c or fusermount -u */
-	if (opts.singlethread)
-		ret = fuse_session_loop(se);
-	else {
-		config = fuse_loop_cfg_create();
-		fuse_loop_cfg_set_clone_fd(config, opts.clone_fd);
-		fuse_loop_cfg_set_max_threads(config, opts.max_threads);
-		ret = fuse_session_loop_mt(se, config);
-		fuse_loop_cfg_destroy(config);
-		config = NULL;
-	}
-
-	fuse_session_unmount(se);
-err_out3:
-	fuse_remove_signal_handlers(se);
-err_out2:
-	fuse_session_destroy(se);
-err_out1:
-	free(opts.mountpoint);
-	fuse_opt_free_args(&args);
-
-	if (lo.root.fd >= 0)
-		close(lo.root.fd);
-
-	free(lo.source);
-	return ret ? 1 : 0;
+    /*
+     * Call the FUSE main loop.
+     * 'frost_oper' is the global struct from callbacks.c
+     */
+    ret = fuse_main(args.argc, args.argv, &frost_oper, NULL);
+    fuse_opt_free_args(&args);
+    return ret;
 }
+

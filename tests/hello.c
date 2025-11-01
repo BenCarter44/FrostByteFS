@@ -79,8 +79,17 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = strlen(options.contents);
-	} else
-		res = -ENOENT;
+	} else if (strcmp(path, "/extra_file.txt") == 0) {
+		stbuf->st_mode = S_IFREG | 0444;
+		stbuf->st_nlink = 1;
+		stbuf->st_size = strnlen("This is an extra file.\n", 1024);
+	}
+	else {
+		// write only file
+		stbuf->st_mode = S_IFREG | 0666;  
+		stbuf->st_nlink = 1;
+		stbuf->st_size = 0;
+	}
 
 	return res;
 }
@@ -99,19 +108,21 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, ".", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 	filler(buf, "..", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 	filler(buf, options.filename, NULL, 0, FUSE_FILL_DIR_DEFAULTS);
+	filler(buf, "extra_file.txt", NULL, 0, FUSE_FILL_DIR_DEFAULTS);
 
 	return 0;
 }
 
 static int hello_open(const char *path, struct fuse_file_info *fi)
 {
-	if (strcmp(path+1, options.filename) != 0)
-		return -ENOENT;
-
-	if ((fi->flags & O_ACCMODE) != O_RDONLY)
-		return -EACCES;
-
-	return 0;
+    if (strcmp(path+1, options.filename) == 0 || strcmp(path, "/extra_file.txt") == 0) {
+        if ((fi->flags & O_ACCMODE) != O_RDONLY)
+            return -EACCES;
+    } else {
+        if ((fi->flags & O_ACCMODE) == O_RDONLY)
+            return -ENOENT;
+    }
+    return 0;
 }
 
 static int hello_read(const char *path, char *buf, size_t size, off_t offset,
@@ -119,18 +130,68 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 {
 	size_t len;
 	(void) fi;
-	if(strcmp(path+1, options.filename) != 0)
-		return -ENOENT;
-
-	len = strlen(options.contents);
-	if (offset < len) {
-		if (offset + size > len)
+	if(strcmp(path+1, options.filename) == 0)
+	{
+		len = strlen(options.contents);
+		if (offset < len) {
+			if (offset + size > len)
 			size = len - offset;
-		memcpy(buf, options.contents + offset, size);
-	} else
-		size = 0;
+			memcpy(buf, options.contents + offset, size);
+		} else
+			size = 0;
+	
+		return size;
+	} else if (strcmp(path, "/extra_file.txt") == 0) {
+		const char *extra_contents = "This is an extra file.\n";
+		len = strnlen(extra_contents, 1024);
+		if (offset < len) {
+			if (offset + size > len)
+				size = len - offset;
+			memcpy(buf, extra_contents + offset, size);
+		} else
+			size = 0;
+
+		return size;
+	}
+	return -ENOENT;
+}
+
+static int hello_write(const char *path, const char *buf, size_t size,
+		       off_t offset, struct fuse_file_info *fi)
+{
+	(void) offset;
+	(void) fi;
+
+	// if (strcmp(path+1, options.filename) == 0 || strcmp(path, "/extra_file.txt") == 0)
+	// 	return -EACCES;
+
+	printf("[WRITE] To file %s: %.*s\n", path, (int)size, buf);
+    fflush(stdout);
 
 	return size;
+}
+
+static int hello_create(const char *path, mode_t mode,
+						struct fuse_file_info *fi)
+{
+	(void) mode;
+	(void) fi;
+
+	printf("[CREATE] File %s created with mode %o\n", path, mode);
+	fflush(stdout);
+
+	return 0;
+}
+
+static int hello_truncate(const char *path, off_t size, struct fuse_file_info *fi)
+{
+    (void) size;
+    (void) fi;
+
+	printf("[TRUNCATE] File %s truncated\n", path);
+	fflush(stdout);
+	return 0;
+
 }
 
 static const struct fuse_operations hello_oper = {
@@ -139,6 +200,9 @@ static const struct fuse_operations hello_oper = {
 	.readdir	= hello_readdir,
 	.open		= hello_open,
 	.read		= hello_read,
+	.write 	    = hello_write,
+	.create     = hello_create,
+	.truncate   = hello_truncate,
 };
 
 static void show_help(const char *progname)
