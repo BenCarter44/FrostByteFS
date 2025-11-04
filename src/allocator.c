@@ -104,7 +104,7 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
     uint32_t index = block_number / BYTES_PER_BLOCK;
     read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     uint8_t value = buffer[block_number % BYTES_PER_BLOCK];
-    if(value > 0 && value != 255)
+    if(value > 0 && value != REF_IS_NON_EXISTANT)
     {
         // good. overwrite buffer
         return fetch_data_block(buffer, block_number);
@@ -146,7 +146,7 @@ static int search_for_next_free_block(uint32_t* block_number)
         for(uint32_t byte_index = 0; byte_index < BYTES_PER_BLOCK; byte_index++)
         {
             uint8_t ref_count = buffer[byte_index];
-            if(ref_count < REF_IS_FULL) // 254 is full. 255 is invalid
+            if(ref_count == 0) // 254 is full. 255 is invalid
             {
                 // is free! 
                 *(block_number) = byte_index + block_index * BYTES_PER_BLOCK;
