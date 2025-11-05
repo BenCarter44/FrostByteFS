@@ -233,6 +233,7 @@ bool allocator_check_valid_super_block()
                 buffer[BYTES_PER_BLOCK-2] == 0xFB && 
                 buffer[BYTES_PER_BLOCK-1] == 0xF5);
     free_buffer(buffer);
+    return out;
 }
 
 int clear_ref_blocks()

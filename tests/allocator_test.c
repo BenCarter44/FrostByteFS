@@ -3,7 +3,7 @@
 #include "rawdisk.h"
 #include "allocator.h"
 
-uint8_t buffer[BYTES_PER_BLOCK];
+uint8_t* buffer;
 
 void create_data()
 {
@@ -60,6 +60,8 @@ int main(int argc, char** argv)
     {
         exit(1);
     }
+
+    create_buffer(&buffer);
     clear_buffer();
 
     // check if disk formatted.
@@ -77,6 +79,7 @@ int main(int argc, char** argv)
     printf("Result on opening disk the second time: %s\n", raw_disk_error_to_string(result));
     if(result < 0)
     {
+        free_buffer(buffer);
         exit(1);
     }
 
@@ -86,6 +89,7 @@ int main(int argc, char** argv)
     if(!val)
     {
         printf("Disk not formatted as FrostByte FS. Exiting...\n");
+        free_buffer(buffer);
         exit(1);
     }
 
@@ -162,6 +166,7 @@ int main(int argc, char** argv)
 
 
     close_disk();
+    free_buffer(buffer);
 
 }
 
