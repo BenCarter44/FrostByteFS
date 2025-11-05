@@ -31,7 +31,7 @@
 
 // Calc number of blocks:
 #define INODE_BLOCKS (uint32_t)31250 // supports 1 million 128 byte INODES
-#define REF_BLOCKS  (uint32_t)(1 + (DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS) / BYTES_PER_BLOCK)
+#define REF_BLOCKS  (uint32_t)((DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS) / BYTES_PER_BLOCK)
 #define DATA_BLOCKS (uint32_t)(DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS - REF_BLOCKS)
 
 
