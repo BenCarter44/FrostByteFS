@@ -26,7 +26,7 @@ const char* allocator_error_to_string(int err) {
         case -ALLOCATOR_DOUBLE_FREE:
             return "ALLOCATOR_DOUBLE_FREE: Trying to free a freed block";
         case -ALLOCATOR_OUT_OF_BOUNDS:
-            return "ALLOCATOR_OUT_OF_BOUNDS: Underlying system I/O error";
+            return "ALLOCATOR_OUT_OF_BOUNDS: Attempting to access block out of bounds";
         case 0:
             return "ALLOCATOR: OK";
         default:

@@ -247,6 +247,8 @@ int clear_ref_blocks()
     clear_buffer(buffer);
     for(uint32_t i = 0; i < REF_BLOCKS; i++)
     {
+        printf("Ref block: %u / %u   \r", i, REF_BLOCKS);
+        fflush(stdout);
         int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + i);
         if(ret < 0)
         {
@@ -254,6 +256,7 @@ int clear_ref_blocks()
             return ret;
         }
     }
+    printf("\n");
     // write invalid.
     int overflow = (BYTES_PER_BLOCK * REF_BLOCKS) - DATA_BLOCKS;
     // three overflow.
@@ -276,6 +279,8 @@ int clear_inode_blocks()
     clear_buffer(buffer);
     for(uint32_t i = 0; i < INODE_BLOCKS; i++)
     {
+        printf("INode Block: %u  / %u \r", i, INODE_BLOCKS);
+        fflush(stdout);
         int ret = write_block_raw(buffer, INODE_BASE_BLOCK + i);
         if(ret < 0)
         {
@@ -283,5 +288,6 @@ int clear_inode_blocks()
             return ret;
         }
     }
+    printf("\n");
     free_buffer(buffer);
 }
