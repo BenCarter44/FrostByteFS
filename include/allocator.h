@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "rawdisk.h"
 
@@ -29,9 +30,9 @@
 
 
 // Calc number of blocks:
-#define INODE_BLOCKS 31250 // supports 1 million 128 byte INODES
-#define REF_BLOCKS  (1 + (DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS) / BYTES_PER_BLOCK)
-#define DATA_BLOCKS (DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS - REF_BLOCKS)
+#define INODE_BLOCKS (uint32_t)31250 // supports 1 million 128 byte INODES
+#define REF_BLOCKS  (uint32_t)(1 + (DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS) / BYTES_PER_BLOCK)
+#define DATA_BLOCKS (uint32_t)(DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS - REF_BLOCKS)
 
 
 // Layout
@@ -56,6 +57,13 @@ int free_data_block(uint32_t block_number);
 int read_inode_block(uint8_t* buffer, uint32_t inode_block_number);
 int write_inode_block(uint8_t* buffer, uint32_t inode_block_number);
 
+// for formatting
+int format_super_block();
+int clear_ref_blocks();
+int clear_inode_blocks();
+
+// check valid super block
+bool allocator_check_valid_super_block();
 
 
 

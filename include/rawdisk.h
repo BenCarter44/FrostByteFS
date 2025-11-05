@@ -12,11 +12,15 @@
 #ifndef RAW_DISK_H
 #define RAW_DISK_H
 
+#define _GNU_SOURCE
+#define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 12)
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/file.h>
+#include <string.h>
 
 #include "error.h"
 

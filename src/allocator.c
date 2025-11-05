@@ -17,13 +17,13 @@ int increment_reference(int8_t value, uint32_t reference_number)
     }
     uint8_t buffer[BYTES_PER_BLOCK];
     uint32_t index = reference_number / BYTES_PER_BLOCK;
-    int ret = read_block_raw(&buffer, REFERENCE_BASE_BLOCK + index);
+    int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     if(ret < 0)
     {
         return ret;
     }
     buffer[reference_number % BYTES_PER_BLOCK] += value;
-    int ret = write_block_raw(&buffer, REFERENCE_BASE_BLOCK + index);
+    ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     if(ret < 0)
     {
         return ret;
@@ -37,7 +37,7 @@ int fetch_data_block(uint8_t* buffer, uint32_t reference_block_number)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
     }
-    int ret = read_block_raw(&buffer, DATA_BASE_BLOCK + reference_block_number);
+    int ret = read_block_raw(buffer, DATA_BASE_BLOCK + reference_block_number);
     if(ret < 0)
     {
         return ret;
@@ -51,7 +51,7 @@ int write_data_block(uint8_t* buffer, uint32_t reference_block_number)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
     }
-    int ret = write_block_raw(&buffer, DATA_BASE_BLOCK + reference_block_number);
+    int ret = write_block_raw(buffer, DATA_BASE_BLOCK + reference_block_number);
     if(ret < 0)
     {
         return ret;
@@ -66,7 +66,7 @@ int read_inode_block(uint8_t* buffer, uint32_t reference_block_number)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
     }
-    int ret = read_block_raw(&buffer, INODE_BASE_BLOCK + reference_block_number);
+    int ret = read_block_raw(buffer, INODE_BASE_BLOCK + reference_block_number);
     if(ret < 0)
     {
         return ret;
@@ -80,7 +80,7 @@ int write_inode_block(uint8_t* buffer, uint32_t reference_block_number)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
     }
-    int ret = write_block_raw(&buffer, INODE_BASE_BLOCK + reference_block_number);
+    int ret = write_block_raw(buffer, INODE_BASE_BLOCK + reference_block_number);
     if(ret < 0)
     {
         return ret;
@@ -124,7 +124,7 @@ int free_data_block(uint32_t block_number)
     {
         // good. overwrite buffer
         buffer[block_number % BYTES_PER_BLOCK] -= 1;
-        return write_block_raw(&buffer, REFERENCE_BASE_BLOCK + index);
+        return write_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     }
     return -ALLOCATOR_READ_ON_FREE;
 }
@@ -171,12 +171,85 @@ int write_to_next_free_block(uint8_t* buffer, uint32_t* block_number)
     }
 
     // write data and then increment ref.
-    ret = write_data_block(buffer, block_number);
+    ret = write_data_block(buffer, *block_number);
     if(ret < 0)
     {
         return ret;
     }
 
-    ret = increment_reference(1, block_number); // increment by 1
+    ret = increment_reference(1, *block_number); // increment by 1
     return 0;
+}
+
+
+// formatting operations
+
+static void set_buffer_clear(uint8_t* buffer)
+{
+    for(unsigned int i = 0; i < BYTES_PER_BLOCK; i++)
+    {
+        buffer[i] = 0;
+    }
+}
+
+
+int format_super_block()
+{
+    uint8_t buffer[BYTES_PER_BLOCK];
+    set_buffer_clear(buffer);
+    buffer[BYTES_PER_BLOCK-4] = 0xFB;
+    buffer[BYTES_PER_BLOCK-3] = 0xF5;
+    buffer[BYTES_PER_BLOCK-2] = 0xFB;
+    buffer[BYTES_PER_BLOCK-1] = 0xF5;
+    write_block_raw(buffer, SUPER_BLOCK);
+}
+
+bool allocator_check_valid_super_block()
+{
+    uint8_t buffer[BYTES_PER_BLOCK];
+    read_block_raw(buffer, SUPER_BLOCK);
+    return (buffer[BYTES_PER_BLOCK-4] == 0xFB &&
+                buffer[BYTES_PER_BLOCK-3] == 0xF5 && 
+                buffer[BYTES_PER_BLOCK-2] == 0xFB && 
+                buffer[BYTES_PER_BLOCK-1] == 0xF5);
+}
+
+int clear_ref_blocks()
+{
+    uint8_t buffer[BYTES_PER_BLOCK];
+    set_buffer_clear(buffer);
+    for(uint32_t i = 0; i < REF_BLOCKS; i++)
+    {
+        int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + i);
+        if(ret < 0)
+        {
+            return ret;
+        }
+    }
+    // write invalid.
+    int overflow = (BYTES_PER_BLOCK * REF_BLOCKS) - DATA_BLOCKS;
+    // three overflow.
+    for(uint32_t i = 0; i < overflow; i++)
+    {
+        buffer[BYTES_PER_BLOCK - i - 1] = REF_IS_NON_EXISTANT;
+    }
+    int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + REF_BLOCKS - 1);
+    if(ret < 0)
+    {
+        return ret;
+    }
+}
+
+int clear_inode_blocks()
+{
+    uint8_t buffer[BYTES_PER_BLOCK];
+    set_buffer_clear(buffer);
+    for(uint32_t i = 0; i < INODE_BLOCKS; i++)
+    {
+        int ret = write_block_raw(buffer, INODE_BASE_BLOCK + i);
+        if(ret < 0)
+        {
+            return ret;
+        }
+    }
 }

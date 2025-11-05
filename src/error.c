@@ -28,6 +28,6 @@ const char* allocator_error_to_string(int err) {
         case 0:
             return "ALLOCATOR: OK";
         default:
-            return "UNKNOWN_ERROR: Unrecognized allocator error code";
+            return raw_disk_error_to_string(err);
     }
 }
