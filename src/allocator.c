@@ -260,11 +260,31 @@ int clear_ref_blocks()
     // write invalid.
     int overflow = (BYTES_PER_BLOCK * REF_BLOCKS) - DATA_BLOCKS;
     // three overflow.
+
+    // set buffer to all 255
+    for(uint32_t i = 0; i < BYTES_PER_BLOCK; i++)
+    {
+        buffer[BYTES_PER_BLOCK - i - 1] = REF_IS_NON_EXISTANT;
+    }
+    int counter = 0;
+    while(overflow >= BYTES_PER_BLOCK)
+    {
+        int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + REF_BLOCKS - 1 - counter);
+        if(ret < 0)
+        {   
+            free_buffer(buffer);
+            return ret;
+        }   
+        overflow -= BYTES_PER_BLOCK;
+        counter++;
+    }
+    
+    clear_buffer(buffer);
     for(uint32_t i = 0; i < overflow; i++)
     {
         buffer[BYTES_PER_BLOCK - i - 1] = REF_IS_NON_EXISTANT;
     }
-    int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + REF_BLOCKS - 1);
+    int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + REF_BLOCKS - 1 - counter);
     free_buffer(buffer);
     if(ret < 0)
     {
