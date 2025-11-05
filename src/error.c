@@ -20,11 +20,11 @@ const char* raw_disk_error_to_string(int err) {
 const char* allocator_error_to_string(int err) {
     switch (err) {
         case -ALLOCATOR_READ_ON_FREE:
-            return "ALLOCATOR_READ_ON_FREE: Disk not opened";
+            return "ALLOCATOR_READ_ON_FREE: Trying to read a block that is free";
         case -ALLOCATOR_OUT_OF_SPACE:
             return "ALLOCATOR_OUT_OF_SPACE: Access beyond disk size";
         case -ALLOCATOR_DOUBLE_FREE:
-            return "ALLOCATOR_DOUBLE_FREE: Underlying system I/O error";
+            return "ALLOCATOR_DOUBLE_FREE: Trying to free a freed block";
         case -ALLOCATOR_OUT_OF_BOUNDS:
             return "ALLOCATOR_OUT_OF_BOUNDS: Underlying system I/O error";
         case 0:

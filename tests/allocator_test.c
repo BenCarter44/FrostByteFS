@@ -61,7 +61,7 @@ int main(int argc, char** argv)
         exit(1);
     }
 
-    create_buffer(&buffer);
+    create_buffer((void**)&buffer);
     clear_buffer();
 
     // check if disk formatted.
@@ -132,8 +132,8 @@ int main(int argc, char** argv)
     for(uint32_t i = 0; i < DATA_BLOCKS; i++)
     {
         r = write_to_next_free_block(buffer, &block_number);
-        printf("Wrote data to data block %u\n",block_number);
-        printf("Result: %s\n", allocator_error_to_string(r));
+    //    printf("Wrote data to data block %u\n",block_number);
+    //    printf("Result: %s\n", allocator_error_to_string(r));
     }
 
     // try writing again!

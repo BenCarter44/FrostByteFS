@@ -114,6 +114,10 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
         // good. overwrite buffer
         return fetch_data_block(buffer, block_number);
     }
+    if(value == REF_IS_NON_EXISTANT)
+    {
+        return -ALLOCATOR_OUT_OF_BOUNDS;
+    }
     return -ALLOCATOR_READ_ON_FREE;
 }
 
@@ -136,7 +140,7 @@ int free_data_block(uint32_t block_number)
         return r;
     }
     free_buffer(buffer);
-    return -ALLOCATOR_READ_ON_FREE;
+    return -ALLOCATOR_DOUBLE_FREE;
 }
 
 
