@@ -145,11 +145,12 @@ int main(int argc, char** argv)
     printf("Result: %s\n", allocator_error_to_string(r));
 
     // do some frees.
+    printf("Do some frees\n");
     for(uint32_t i = 0; i < DATA_BLOCKS; i += 8)
     {
         r = free_data_block(i);
-        printf("Freed data to data block %u\n",i);
-        printf("Result: %s\n", allocator_error_to_string(r));
+    //    printf("Freed data to data block %u\n",i);
+    //    printf("Result: %s\n", allocator_error_to_string(r));
     }
 
     r = write_to_next_free_block(buffer, &block_number);

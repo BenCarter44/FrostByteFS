@@ -24,7 +24,11 @@ int free_buffer(void* buffer)
 
 int open_disk(char* path)
 {
+#ifndef USE_KERNEL_CACHE
     int fd = open(path, O_RDWR | O_DIRECT);
+#else
+    int fd = open(path, O_RDWR);
+#endif
     if(fd < 0)
     {
         return -RAW_DISK_ERROR_SYSTEM; 

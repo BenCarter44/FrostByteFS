@@ -24,6 +24,9 @@
 
 #include "error.h"
 
+// Uncomment below to use the kernel caching on reads/writes.
+// #define USE_KERNEL_CACHE   
+
 #define DISK_SIZE_IN_BLOCKS 13107200
 #define BYTES_PER_BLOCK 4096
 
