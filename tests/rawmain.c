@@ -2,7 +2,7 @@
 #include "stdio.h"
 #include "rawdisk.h"
 
-uint8_t buffer_frame[BYTES_PER_BLOCK];
+uint8_t* buffer_frame;
 
 void set_buffer()
 {
@@ -31,11 +31,13 @@ void print_hex(const uint8_t *data, size_t len) {
 
 int main(int argc, char** argv)
 {
+    create_buffer((void**)&buffer_frame);
     int result = open_disk("/dev/vdb");
 
     printf("Result: %s\n", raw_disk_error_to_string(result));
     if(result < 0)
     {
+        free_buffer(buffer_frame);
         exit(1);
     }
 
@@ -52,6 +54,7 @@ int main(int argc, char** argv)
     printf("Result: %s\n", raw_disk_error_to_string(result));
     if(result < 0)
     {
+        free_buffer(buffer_frame);
         exit(1);
     }
     set_buffer();
@@ -59,6 +62,6 @@ int main(int argc, char** argv)
     close_disk();
 
     print_hex(buffer_frame, BYTES_PER_BLOCK);
-
+    free_buffer(buffer_frame);
 
 }

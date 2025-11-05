@@ -17,7 +17,7 @@ int increment_reference(int8_t value, uint32_t reference_number)
     }
 
     uint8_t* buffer;
-    create_buffer((void*)buffer);
+    create_buffer((void**)&buffer);
 
     uint32_t index = reference_number / BYTES_PER_BLOCK;
     int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
@@ -122,7 +122,7 @@ int free_data_block(uint32_t block_number)
 {
     // check if in use!
     uint8_t* buffer;
-    create_buffer(buffer);
+    create_buffer((void**)&buffer);
 
     uint32_t index = block_number / BYTES_PER_BLOCK;
     read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
@@ -146,7 +146,7 @@ static int search_for_next_free_block(uint32_t* block_number)
     // scan entire reference list to find the first 0.
     // later.... I can cache this.
     uint8_t* buffer;
-    create_buffer(buffer);
+    create_buffer((void**)&buffer);
 
     for(uint32_t block_index = 0; block_index < REF_BLOCKS; block_index++)
     {
@@ -211,7 +211,7 @@ static void clear_buffer(uint8_t* buffer)
 int format_super_block()
 {
     uint8_t* buffer;
-    create_buffer(buffer);
+    create_buffer((void**)&buffer);
     clear_buffer(buffer);
     buffer[BYTES_PER_BLOCK-4] = 0xFB;
     buffer[BYTES_PER_BLOCK-3] = 0xF5;
@@ -224,7 +224,7 @@ int format_super_block()
 bool allocator_check_valid_super_block()
 {
     uint8_t* buffer;
-    create_buffer(buffer);
+    create_buffer((void**)&buffer);
     int r = read_block_raw(buffer, SUPER_BLOCK);
     
     // print here.
@@ -238,7 +238,7 @@ bool allocator_check_valid_super_block()
 int clear_ref_blocks()
 {
     uint8_t* buffer;
-    create_buffer(buffer);
+    create_buffer((void**)&buffer);
     clear_buffer(buffer);
     for(uint32_t i = 0; i < REF_BLOCKS; i++)
     {
@@ -267,7 +267,7 @@ int clear_ref_blocks()
 int clear_inode_blocks()
 {
     uint8_t* buffer;
-    create_buffer(buffer);
+    create_buffer((void**)&buffer);
     clear_buffer(buffer);
     for(uint32_t i = 0; i < INODE_BLOCKS; i++)
     {

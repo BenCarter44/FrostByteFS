@@ -6,9 +6,9 @@ static char* disk_name = NULL;
 static int disk_fd = 0;
 
 
-int create_buffer(void* buffer)
+int create_buffer(void** buffer)
 {
-    int r = posix_memalign(&buffer, BYTES_PER_BLOCK, BYTES_PER_BLOCK);
+    int r = posix_memalign(buffer, BYTES_PER_BLOCK, BYTES_PER_BLOCK);
     if(r != 0)
     {
         return -RAW_BUFFER_ERROR;
