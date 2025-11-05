@@ -22,7 +22,7 @@ const char* allocator_error_to_string(int err) {
         case -ALLOCATOR_READ_ON_FREE:
             return "ALLOCATOR_READ_ON_FREE: Trying to read a block that is free";
         case -ALLOCATOR_OUT_OF_SPACE:
-            return "ALLOCATOR_OUT_OF_SPACE: Access beyond disk size";
+            return "ALLOCATOR_OUT_OF_SPACE: No more available blocks!";
         case -ALLOCATOR_DOUBLE_FREE:
             return "ALLOCATOR_DOUBLE_FREE: Trying to free a freed block";
         case -ALLOCATOR_OUT_OF_BOUNDS:
