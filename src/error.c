@@ -8,6 +8,8 @@ const char* raw_disk_error_to_string(int err) {
             return "RAW_DISK_ERROR_OUT_OF_BOUNDS: Access beyond disk size";
         case -RAW_DISK_ERROR_SYSTEM:
             return "RAW_DISK_ERROR_SYSTEM: Underlying system I/O error";
+        case -RAW_BUFFER_ERROR:
+            return "RAW BUFFER ERROR";
         case 0:
             return "RAW_DISK: OK";
         default:

@@ -27,7 +27,8 @@
 #define DISK_SIZE_IN_BLOCKS 13107200
 #define BYTES_PER_BLOCK 4096
 
-
+int create_buffer(void* buffer);
+int free_buffer(void* buffer);
 
 int open_disk(char* disk_name);
 int close_disk();

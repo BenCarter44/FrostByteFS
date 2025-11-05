@@ -6,6 +6,7 @@
 #define RAW_DISK_ERROR_UNOPENED 1
 #define RAW_DISK_ERROR_OUT_OF_BOUNDS 2
 #define RAW_DISK_ERROR_SYSTEM 3
+#define RAW_BUFFER_ERROR 8
 const char* raw_disk_error_to_string(int err);
 
 // Allocator Errors
