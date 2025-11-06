@@ -19,6 +19,8 @@ for the 'frost' FUSE filesystem.
 #include <stddef.h>
 #include <assert.h>
 
+#include "inode.h"
+
 /*
 
 Command line options
@@ -85,5 +87,15 @@ struct fuse_file_info *fi);
 
 int frost_truncate(const char *path, off_t size,
 struct fuse_file_info *fi);
+
+// --- ADD: New prototypes for a functional filesystem ---
+
+int frost_mkdir(const char *path, mode_t mode);
+
+int frost_unlink(const char *path);
+
+int frost_rmdir(const char *path);
+
+int frost_rename(const char *from, const char *to, unsigned int flags);
 
 #endif // FROST_CALLBACKS_H_

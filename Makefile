@@ -11,7 +11,7 @@ CC = gcc
 CFLAGS = -Wall -Iinclude `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64
 
 # Source files
-SRCS = src/main.c src/callbacks.c
+SRCS = src/main.c src/callbacks.c src/inode.c src/allocator.c src/rawdisk.c src/error.c
 
 
 # --- Rules ---
