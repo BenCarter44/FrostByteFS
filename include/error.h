@@ -16,5 +16,10 @@ const char* raw_disk_error_to_string(int err);
 #define ALLOCATOR_OUT_OF_BOUNDS 7
 const char* allocator_error_to_string(int err);
 
+#define INODE_BUFFER_ALLOCATION_FAILED 30
+#define INODE_OUT_OF_SUPPORTED_SIZE 31
+#define INODE_CHILD_UPDATE_FAILED 32
+#define INODE_RECURSIVE_TRUNCATE_FAILED 33
+const char* inode_error_to_string(int err);
 
 #endif

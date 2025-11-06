@@ -7,26 +7,17 @@
 #include <sys/stat.h>
 #include <fuse.h>
 #include <stdint.h>
-#include "allocator.h" // Include our new Layer 1 API
+#include "allocator.h" // Include our Layer 1 API
 
 // --- iNode Definitions ---
 
-#define INODE_SIZE 128 // As specified in allocator.h comments
-#define INODES_PER_BLOCK (BYTES_PER_BLOCK / INODE_SIZE) // 4096 / 128 = 32
-
-// We need an inode bitmap. Let's place it in the first blocks
-// of the iNode region.
-// 1 block = 4096 bytes * 8 bits/byte = 32,768 inodes
-// 1,000,000 inodes / 32,768 = ~31 blocks
-#define INODE_BITMAP_BLOCKS 31 
-
-// Block number *within the iNode region* where inodes start
+#define INODE_SIZE 128
+#define INODES_PER_BLOCK (BYTES_PER_BLOCK / INODE_SIZE)
+#define INODE_BITMAP_BLOCKS 31  // ~1 million inodes
 #define INODE_TABLE_START_BLOCK INODE_BITMAP_BLOCKS
 
-// --- iNode Structure (128 bytes) ---
-
 #define NUM_DIRECT_BLOCKS 12
-#define POINTERS_PER_BLOCK (BYTES_PER_BLOCK / sizeof(uint32_t)) // 1024
+#define POINTERS_PER_BLOCK (BYTES_PER_BLOCK / sizeof(uint32_t))
 
 struct inode {
     mode_t mode;        // 4 bytes
@@ -37,16 +28,13 @@ struct inode {
     time_t atime;       // 8 bytes
     time_t mtime;       // 8 bytes
     time_t ctime;       // 8 bytes
-    
-    // Pointers: 12 (direct) + 1 (single) + 1 (double) + 1 (triple) = 15
-    // 15 * 4 bytes = 60 bytes
-    uint32_t direct_blocks[NUM_DIRECT_BLOCKS]; // 48 bytes
-    uint32_t single_indirect; // 4 bytes
-    uint32_t double_indirect; // 4 bytes
-    uint32_t triple_indirect; // 4 bytes
 
-    // Total: 108 bytes. 20 bytes padding.
-    char padding[20];
+    uint32_t direct_blocks[NUM_DIRECT_BLOCKS]; // 48 bytes
+    uint32_t single_indirect;  // 4 bytes
+    uint32_t double_indirect;  // 4 bytes
+    uint32_t triple_indirect;  // 4 bytes
+
+    char padding[20];          // total 128 bytes
 };
 
 // --- iNode Layer API ---
@@ -54,24 +42,36 @@ struct inode {
 /**
  * @brief Initializes the iNode system if disk is unformatted.
  * Creates the inode bitmap and the root directory (inode 0).
+ *
+ * @param max_inodes Total number of inodes supported by filesystem.
+ * @return 0 on success or negative errno on failure.
  */
-void inode_init_root_if_needed();
+int inode_init_root_if_needed(uint32_t max_inodes);
 
-// The rest of the API remains the same,
-// but their implementation in inode.c will be completely different.
-
+/**
+ * @brief Find inode number for absolute path (returns >=0 or negative errno)
+ */
 int inode_find_by_path(const char *path);
-int inode_create(const char *path, mode_t mode, uid_t uid, gid_t gid);
-int inode_read(int inum, char *buf, size_t size, off_t offset);
-int inode_write(int inum, const char *buf, size_t size, off_t offset);
-int inode_readdir(int inum, void *buf, fuse_fill_dir_t filler);
+
+/**
+ * @brief Create a new file or directory.
+ * Automatically sets uid/gid to current user.
+ * @param path Absolute path of new file/dir.
+ * @param mode File mode (use S_IFREG or S_IFDIR | perms).
+ * @param out_inum [out] Returns created inode number.
+ */
+int inode_create(const char *path, mode_t mode, uint32_t *out_inum);
+
+ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset);
+ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset);
+int inode_readdir(uint32_t inum, void *buf, fuse_fill_dir_t filler);
 int inode_unlink(const char *path);
 int inode_rmdir(const char *path);
-int inode_truncate(int inum, off_t size);
+int inode_truncate(uint32_t inum, off_t size);
 int inode_rename(const char *from, const char *to);
 
 // New helpers to read/write the inode structs themselves
-void inode_read_from_disk(int inum, struct inode *node);
-void inode_write_to_disk(int inum, struct inode *node);
+void inode_read_from_disk(uint32_t inum, struct inode *node);
+int inode_write_to_disk(uint32_t inum, const struct inode *node);
 
 #endif // FROST_INODE_H_
