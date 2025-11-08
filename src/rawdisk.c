@@ -6,24 +6,29 @@ static char* disk_name = NULL;
 static int disk_fd = 0;
 
 
-const char* raw_disk_error_to_string(int err) {
-    switch (err) {
-        case -RAW_DISK_ERROR_UNOPENED:
-            return "RAW_DISK_ERROR_UNOPENED: Disk not opened";
-        case -RAW_DISK_ERROR_OUT_OF_BOUNDS:
-            return "RAW_DISK_ERROR_OUT_OF_BOUNDS: Access beyond disk size";
-        case -RAW_DISK_ERROR_SYSTEM:
-            return "RAW_DISK_ERROR_SYSTEM: Underlying system I/O error";
-        case 0:
-            return "RAW_DISK: OK";
-        default:
-            return "UNKNOWN_ERROR: Unrecognized raw disk error code";
+int create_buffer(void** buffer)
+{
+    int r = posix_memalign(buffer, BYTES_PER_BLOCK, BYTES_PER_BLOCK);
+    if(r != 0)
+    {
+        return -RAW_BUFFER_ERROR;
     }
+    return 0;
 }
+
+int free_buffer(void* buffer)
+{
+    free(buffer);
+}
+
 
 int open_disk(char* path)
 {
+#ifndef USE_KERNEL_CACHE
     int fd = open(path, O_RDWR | O_DIRECT);
+#else
+    int fd = open(path, O_RDWR);
+#endif
     if(fd < 0)
     {
         return -RAW_DISK_ERROR_SYSTEM; 
@@ -47,7 +52,7 @@ int close_disk()
     return 0;
 }
 
-int read_block_raw(char* buffer, unsigned int block_number)
+int read_block_raw(uint8_t* buffer, uint32_t block_number)
 {
     if(disk_name == NULL)
     {
@@ -66,7 +71,7 @@ int read_block_raw(char* buffer, unsigned int block_number)
     return 0;
 }
 
-int write_block_raw(char* buffer, unsigned int block_number)
+int write_block_raw(uint8_t* buffer, uint32_t block_number)
 {
     if(disk_name == NULL)
     {
