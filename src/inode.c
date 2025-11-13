@@ -166,7 +166,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
     int rc = 0;
     rc = write_inode_block(buf, block_num);
 
-    free_buffer(buf);
+    free(buf);
 
     return rc;
 }
@@ -610,7 +610,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
         node.size = newsize;
         node.mtime = node.ctime = time(NULL);
         inode_write_to_disk(inum, &node);
-        free_buffer(scratch);
+        free(scratch);
         inode_unlock(inum);
 
         return 0;
@@ -796,7 +796,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
                 uint64_t blocks_sub = to_free_blocks;
 
                 if (inode_truncate_recursive(node.double_indirect, 2, &blocks_sub, scratch) != 0) {
-                    free_buffer(scratch);
+                    free(scratch);
                     inode_unlock(inum);
 
                     return -EIO;
@@ -818,7 +818,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
             if (keep_in_double < double_total && node.double_indirect) {
                 // iterate over level1 pointers and free children as needed
                 if (read_data_block(scratch, node.double_indirect) != 0) {
-                    free_buffer(scratch);
+                    free(scratch);
                     inode_unlock(inum);
 
                     return -EIO;
@@ -846,7 +846,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
                             uint64_t blocks_sub = to_free_here;
 
                             if (inode_truncate_recursive(l1[idx], 1, &blocks_sub, scratch) != 0) {
-                                free_buffer(scratch);
+                                free(scratch);
                                 inode_unlock(inum);
 
                                 return -EIO;
@@ -870,7 +870,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
                 uint32_t new_l1 = 0;
 
                 if (write_to_next_free_block(scratch, &new_l1) != 0) {
-                    free_buffer(scratch);
+                    free(scratch);
                     inode_unlock(inum);
 
                     return -EIO;
@@ -892,7 +892,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
                 uint64_t blocks_sub = to_free_blocks;
 
                 if (inode_truncate_recursive(node.triple_indirect, 3, &blocks_sub, scratch) != 0) {
-                    free_buffer(scratch);
+                    free(scratch);
                     inode_unlock(inum);
 
                     return -EIO;
@@ -913,7 +913,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
             // For brevity and clarity: use a simple approach: iterate triple-level entries and free subtrees whose ranges are > keep.
             if (node.triple_indirect) {
                 if (read_data_block(scratch, node.triple_indirect) != 0) {
-                    free_buffer(scratch);
+                    free(scratch);
                     inode_unlock(inum);
 
                     return -EIO;
@@ -943,7 +943,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
                             uint64_t blocks_sub = to_free_here;
 
                             if (inode_truncate_recursive(l2[i2], 2, &blocks_sub, scratch) != 0) {
-                                free_buffer(scratch);
+                                free(scratch);
                                 inode_unlock(inum);
                                 return -EIO;
                             }
@@ -965,7 +965,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
                 uint32_t new_l2 = 0;
 
                 if (write_to_next_free_block(scratch, &new_l2) != 0) {
-                    free_buffer(scratch);
+                    free(scratch);
                     inode_unlock(inum);
 
                     return -EIO;
@@ -982,7 +982,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
     node.mtime = node.ctime = time(NULL);
     inode_write_to_disk(inum, &node);
 
-    free_buffer(scratch);
+    free(scratch);
     inode_unlock(inum);
 
     return 0;
@@ -994,20 +994,31 @@ int inode_truncate(uint32_t inum, off_t newsize) {
 
 ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
     if (size == 0) return 0;
+
     if (offset < 0) return -EINVAL;
+
     inode_lock(inum);
+
     struct inode node;
     inode_read_from_disk(inum, &node);
 
     uint64_t file_size = node.size;
-    if ((uint64_t)offset >= file_size) { inode_unlock(inum); return 0; }
+
+    if ((uint64_t)offset >= file_size) { 
+        inode_unlock(inum); 
+        return 0; 
+    }
 
     // clamp size by file bounds
-    if ((uint64_t)offset + size > file_size) size = (size_t)(file_size - offset);
+    if ((uint64_t)offset + size > file_size) {
+        size = (size_t)(file_size - offset);
+    }
 
-    uint8_t *scratch = NULL;
-    create_buffer((void**)&scratch);
-    if (!scratch) { inode_unlock(inum); return -ENOMEM; }
+    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
+    if (!scratch) { 
+        inode_unlock(inum); return -ENOMEM; 
+    }
 
     size_t bytes_left = size;
     size_t copied = 0;
@@ -1018,17 +1029,23 @@ ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
         uint32_t phy = inode_get_block_num(&node, lblock, scratch);
         size_t block_off = (size_t)(cur_offset % BYTES_PER_BLOCK);
         size_t to_copy = BYTES_PER_BLOCK - block_off;
-        if (to_copy > bytes_left) to_copy = bytes_left;
+
+        if (to_copy > bytes_left) {
+            to_copy = bytes_left;
+        }
 
         if (phy == 0) {
             // hole -> zero
             memset((uint8_t*)buf + copied, 0, to_copy);
+
         } else {
             if (read_data_block(scratch, phy) != 0) {
-                free_buffer(scratch);
+                free(scratch);
                 inode_unlock(inum);
+
                 return -EIO;
             }
+
             memcpy((uint8_t*)buf + copied, scratch + block_off, to_copy);
         }
 
@@ -1037,11 +1054,13 @@ ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
         cur_offset += to_copy;
     }
 
+    // todo: comment this to make read faster??
     node.atime = time(NULL);
     inode_write_to_disk(inum, &node);
 
-    free_buffer(scratch);
+    free(scratch);
     inode_unlock(inum);
+
     return (ssize_t)copied;
 }
 
@@ -1054,14 +1073,19 @@ ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
  */
 ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
     if (size == 0) return 0;
+
     if (offset < 0) return -EINVAL;
+
     inode_lock(inum);
     struct inode node;
     inode_read_from_disk(inum, &node);
 
-    uint8_t *scratch = NULL;
-    create_buffer((void**)&scratch);
-    if (!scratch) { inode_unlock(inum); return -ENOMEM; }
+    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
+    if (!scratch) { 
+        inode_unlock(inum); 
+        return -ENOMEM; 
+    }
 
     size_t bytes_left = size;
     size_t written = 0;
@@ -1071,16 +1095,22 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
         uint64_t lblock = cur_offset / BYTES_PER_BLOCK;
         size_t block_off = (size_t)(cur_offset % BYTES_PER_BLOCK);
         size_t to_write = BYTES_PER_BLOCK - block_off;
-        if (to_write > bytes_left) to_write = bytes_left;
+
+        if (to_write > bytes_left) {
+            to_write = bytes_left;
+        }
 
         // Read old block if present
         uint32_t old_phy = inode_get_block_num(&node, lblock, scratch);
+
         if (old_phy != 0) {
             if (read_data_block(scratch, old_phy) != 0) {
-                free_buffer(scratch);
+                free(scratch);
                 inode_unlock(inum);
+
                 return -EIO;
             }
+
         } else {
             memset(scratch, 0, BYTES_PER_BLOCK);
         }
@@ -1090,9 +1120,11 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
 
         // Write the merged block to a new physical block (CoW)
         uint32_t new_phy = 0;
+
         if (write_to_next_free_block(scratch, &new_phy) != 0) {
-            free_buffer(scratch);
+            free(scratch);
             inode_unlock(inum);
+
             return -EIO;
         }
 
@@ -1100,15 +1132,17 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
         if (inode_set_block_num(inum, &node, lblock, new_phy) != 0) {
             // free the new block we allocated since we failed to update pointers
             free_data_block(new_phy);
-            free_buffer(scratch);
+            free(scratch);
             inode_unlock(inum);
+
             return -EIO;
         }
+
         // Note: inode_set_block_num already freed old data block for direct blocks.
         // For indirect children, the free of the old data block (if present) was done
         // during the pointer-tree CoW in our set_block_recursive (the leaf set frees children).
         // To be safe: if old_phy still exists and was not freed, free it:
-        if (old_phy != 0) {
+        if (old_phy != 0 && old_phy != new_phy) {
             // old_phy may have been freed by inode_set_block_num; free_data_block should
             // be idempotent or reference-count aware on L1. We'll attempt to free
             // but ignore errors: allocator will manage refcounts.
@@ -1118,15 +1152,21 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
         written += to_write;
         bytes_left -= to_write;
         cur_offset += to_write;
+
+        // todo: write inode every time for crash consistency ??? (slow)
     }
 
     // Update size and timestamps
-    if ((uint64_t)(offset + (off_t)written) > node.size) node.size = offset + (off_t)written;
+    if ((uint64_t)(offset + (off_t)written) > node.size) {
+        node.size = offset + (off_t)written;
+    }
+
     node.mtime = node.ctime = time(NULL);
     inode_write_to_disk(inum, &node);
 
-    free_buffer(scratch);
+    free(scratch);
     inode_unlock(inum);
+
     return (ssize_t)written;
 }
 
@@ -1145,28 +1185,40 @@ static inline uint32_t dir_entries_per_block(void) {
 int inode_find_dirent(uint32_t dir_inum, const char *name) {
     struct inode node;
     inode_read_from_disk(dir_inum, &node);
+
     if (!S_ISDIR(node.mode)) return -ENOTDIR;
 
-    uint8_t *scratch = NULL;
-    create_buffer((void**)&scratch);
+    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
     if (!scratch) return -ENOMEM;
 
     uint32_t per = dir_entries_per_block();
     uint64_t total_blocks = (node.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
+
     for (uint64_t b = 0; b < total_blocks; ++b) {
         uint32_t phy = inode_get_block_num(&node, b, scratch);
+
         if (phy == 0) continue;
-        if (read_data_block(scratch, phy) != 0) { free_buffer(scratch); return -EIO; }
+
+        if (read_data_block(scratch, phy) != 0) { 
+            free(scratch); 
+            return -EIO; 
+        }
+
         directory_entry *ents = (directory_entry*)scratch;
+
         for (uint32_t i = 0; i < per; ++i) {
             if (ents[i].inum != 0 && strncmp(ents[i].name, name, MAX_FILENAME_LEN) == 0) {
                 uint32_t found = ents[i].inum;
-                free_buffer(scratch);
+                free(scratch);
+
                 return (int)found;
             }
         }
     }
-    free_buffer(scratch);
+
+    free(scratch);
+
     return -ENOENT;
 }
 
@@ -1180,11 +1232,18 @@ int inode_add_dirent(uint32_t parent_inum, const char *name, uint32_t child_inum
     inode_lock(parent_inum);
     struct inode parent;
     inode_read_from_disk(parent_inum, &parent);
-    if (!S_ISDIR(parent.mode)) { inode_unlock(parent_inum); return -ENOTDIR; }
 
-    uint8_t *scratch = NULL;
-    create_buffer((void**)&scratch);
-    if (!scratch) { inode_unlock(parent_inum); return -ENOMEM; }
+    if (!S_ISDIR(parent.mode)) { 
+        inode_unlock(parent_inum); 
+        return -ENOTDIR; 
+    }
+
+    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
+    if (!scratch) { 
+        inode_unlock(parent_inum); 
+        return -ENOMEM; 
+    }
 
     uint32_t per = dir_entries_per_block();
     uint64_t total_blocks = (parent.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
@@ -1192,9 +1251,18 @@ int inode_add_dirent(uint32_t parent_inum, const char *name, uint32_t child_inum
     // First try to find an existing free slot
     for (uint64_t b = 0; b < total_blocks; ++b) {
         uint32_t phy = inode_get_block_num(&parent, b, scratch);
+
         if (phy == 0) continue;
-        if (read_data_block(scratch, phy) != 0) { free_buffer(scratch); inode_unlock(parent_inum); return -EIO; }
+
+        if (read_data_block(scratch, phy) != 0) { 
+            free(scratch); 
+            inode_unlock(parent_inum); 
+            
+            return -EIO; 
+        }
+
         directory_entry *ents = (directory_entry*)scratch;
+
         for (uint32_t i = 0; i < per; ++i) {
             if (ents[i].inum == 0) {
                 // fill this slot
@@ -1203,17 +1271,27 @@ int inode_add_dirent(uint32_t parent_inum, const char *name, uint32_t child_inum
                 ents[i].name[MAX_FILENAME_LEN] = '\0';
                 // write new block CoW style
                 uint32_t new_phy = 0;
+
                 if (write_to_next_free_block(scratch, &new_phy) != 0) {
-                    free_buffer(scratch); inode_unlock(parent_inum); return -EIO;
+                    free(scratch); 
+                    inode_unlock(parent_inum); 
+
+                    return -EIO;
                 }
+
                 // update parent pointer
                 if (inode_set_block_num(parent_inum, &parent, b, new_phy) != 0) {
                     free_data_block(new_phy);
-                    free_buffer(scratch); inode_unlock(parent_inum); return -EIO;
+                    free(scratch); 
+                    inode_unlock(parent_inum); 
+                    
+                    return -EIO;
                 }
+
                 inode_write_to_disk(parent_inum, &parent);
-                free_buffer(scratch);
+                free(scratch);
                 inode_unlock(parent_inum);
+
                 return 0;
             }
         }
@@ -1221,25 +1299,37 @@ int inode_add_dirent(uint32_t parent_inum, const char *name, uint32_t child_inum
 
     // No free slot found -> append new block with a single entry
     memset(scratch, 0, BYTES_PER_BLOCK);
+
     directory_entry *ents = (directory_entry*)scratch;
+
     ents[0].inum = child_inum;
     strncpy(ents[0].name, name, MAX_FILENAME_LEN);
     ents[0].name[MAX_FILENAME_LEN] = '\0';
 
     uint32_t new_phy = 0;
+
     if (write_to_next_free_block(scratch, &new_phy) != 0) {
-        free_buffer(scratch); inode_unlock(parent_inum); return -EIO;
+        free(scratch); 
+        inode_unlock(parent_inum); 
+        
+        return -EIO;
     }
+
     // set as next logical block number (total_blocks)
     if (inode_set_block_num(parent_inum, &parent, total_blocks, new_phy) != 0) {
         free_data_block(new_phy);
-        free_buffer(scratch); inode_unlock(parent_inum); return -EIO;
+        free(scratch); 
+        inode_unlock(parent_inum); 
+        
+        return -EIO;
     }
+
     // increase parent size by one block
     parent.size = parent.size + BYTES_PER_BLOCK;
     inode_write_to_disk(parent_inum, &parent);
-    free_buffer(scratch);
+    free(scratch);
     inode_unlock(parent_inum);
+
     return 0;
 }
 
@@ -1251,19 +1341,36 @@ int inode_remove_dirent(uint32_t parent_inum, const char *name) {
     inode_lock(parent_inum);
     struct inode parent;
     inode_read_from_disk(parent_inum, &parent);
-    if (!S_ISDIR(parent.mode)) { inode_unlock(parent_inum); return -ENOTDIR; }
 
-    uint8_t *scratch = NULL;
-    create_buffer((void**)&scratch);
-    if (!scratch) { inode_unlock(parent_inum); return -ENOMEM; }
+    if (!S_ISDIR(parent.mode)) { 
+        inode_unlock(parent_inum); 
+        return -ENOTDIR; 
+    }
+
+    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
+    if (!scratch) { 
+        inode_unlock(parent_inum); 
+        return -ENOMEM; 
+    }
 
     uint32_t per = dir_entries_per_block();
     uint64_t total_blocks = (parent.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
+
     for (uint64_t b = 0; b < total_blocks; ++b) {
         uint32_t phy = inode_get_block_num(&parent, b, scratch);
+
         if (phy == 0) continue;
-        if (read_data_block(scratch, phy) != 0) { free_buffer(scratch); inode_unlock(parent_inum); return -EIO; }
+
+        if (read_data_block(scratch, phy) != 0) { 
+            free(scratch); 
+            inode_unlock(parent_inum); 
+            
+            return -EIO; 
+        }
+
         directory_entry *ents = (directory_entry*)scratch;
+
         for (uint32_t i = 0; i < per; ++i) {
             if (ents[i].inum != 0 && strncmp(ents[i].name, name, MAX_FILENAME_LEN) == 0) {
                 // remove
@@ -1271,22 +1378,36 @@ int inode_remove_dirent(uint32_t parent_inum, const char *name) {
                 ents[i].name[0] = '\0';
                 // write new pointer block CoW style
                 uint32_t new_phy = 0;
+
                 if (write_to_next_free_block(scratch, &new_phy) != 0) {
-                    free_buffer(scratch); inode_unlock(parent_inum); return -EIO;
+                    free(scratch); 
+                    inode_unlock(parent_inum); 
+                    
+                    return -EIO;
                 }
+
                 if (inode_set_block_num(parent_inum, &parent, b, new_phy) != 0) {
                     free_data_block(new_phy);
-                    free_buffer(scratch); inode_unlock(parent_inum); return -EIO;
+                    free(scratch); 
+                    inode_unlock(parent_inum); 
+                    
+                    return -EIO;
                 }
+
                 inode_write_to_disk(parent_inum, &parent);
-                free_buffer(scratch);
+                free(scratch);
                 inode_unlock(parent_inum);
+
                 return 0;
             }
         }
     }
-    free_buffer(scratch);
+
+    // todo: do we need to reduce parent.size if a whole block is empty?? (harmless)
+
+    free(scratch);
     inode_unlock(parent_inum);
+
     return -ENOENT;
 }
 
@@ -1304,26 +1425,45 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
 
     // Duplicate path for dirname/basename
     char *pathdup = strdup(path);
-    if (!pathdup) return -ENOMEM;
+
+    if (!pathdup) {
+        return -ENOMEM;
+    }
+
     char *dirpart = dirname(pathdup);
     char *basepart = basename(pathdup);
 
     // Find parent inode
     int parent_inum = inode_find_by_path(dirpart);
-    if (parent_inum < 0) { free(pathdup); return parent_inum; }
+
+    if (parent_inum < 0) { 
+        free(pathdup); 
+        return parent_inum; 
+    }
 
     // Ensure parent is directory
     struct inode parent;
     inode_read_from_disk((uint32_t)parent_inum, &parent);
-    if (!S_ISDIR(parent.mode)) { free(pathdup); return -ENOTDIR; }
+
+    if (!S_ISDIR(parent.mode)) { 
+        free(pathdup); 
+        return -ENOTDIR; 
+    }
 
     // Ensure name not exists
     int exists = inode_find_dirent((uint32_t)parent_inum, basepart);
-    if (exists >= 0) { free(pathdup); return -EEXIST; }
+
+    if (exists >= 0) { 
+        free(pathdup); 
+        return -EEXIST; 
+    }
 
     // allocate inode
     uint32_t new_inum;
-    if (inode_alloc(&new_inum) != 0) { free(pathdup); return -ENOSPC; }
+    if (inode_alloc(&new_inum) != 0) { 
+        free(pathdup); 
+        return -ENOSPC; 
+    }
 
     // initialize inode struct
     struct inode node;
@@ -1334,26 +1474,41 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
     node.nlink = S_ISDIR(mode) ? 2 : 1; // dir has . and ..
     node.size = 0;
     node.atime = node.mtime = node.ctime = time(NULL);
+
     // write inode
     if (inode_write_to_disk(new_inum, &node) != 0) { inode_free(new_inum); free(pathdup); return -EIO; }
 
     // if directory, create '.' and '..' entries
     if (S_ISDIR(mode)) {
         // create one data block and add '.' and '..'
-        uint8_t *scratch = NULL;
-        create_buffer((void**)&scratch);
-        if (!scratch) { inode_free(new_inum); free(pathdup); return -ENOMEM; }
+        uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
+        if (!scratch) { 
+            inode_free(new_inum); 
+            free(pathdup); 
+            
+            return -ENOMEM; 
+        }
+
         memset(scratch, 0, BYTES_PER_BLOCK);
+
         directory_entry *ents = (directory_entry*)scratch;
+
         ents[0].inum = new_inum;
         strncpy(ents[0].name, ".", MAX_FILENAME_LEN); ents[0].name[MAX_FILENAME_LEN] = '\0';
         ents[1].inum = parent_inum;
         strncpy(ents[1].name, "..", MAX_FILENAME_LEN); ents[1].name[MAX_FILENAME_LEN] = '\0';
 
         uint32_t blocknum = 0;
+
         if (write_to_next_free_block(scratch, &blocknum) != 0) {
-            free_buffer(scratch); inode_free(new_inum); free(pathdup); return -EIO;
+            free(scratch); 
+            inode_free(new_inum); 
+            free(pathdup); 
+            
+            return -EIO;
         }
+
         // set as direct block 0
         inode_lock(new_inum);
         inode_read_from_disk(new_inum, &node);
@@ -1361,7 +1516,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         node.size = BYTES_PER_BLOCK;
         inode_write_to_disk(new_inum, &node);
         inode_unlock(new_inum);
-        free_buffer(scratch);
+        free(scratch);
 
         // increment parent link count
         parent.nlink++;
@@ -1373,6 +1528,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         // cleanup: remove inode and its blocks
         inode_free(new_inum);
         free(pathdup);
+
         return -EIO;
     }
 
@@ -1470,8 +1626,8 @@ int inode_readdir(uint32_t dir_inum, void *buf, int (*filler)(void*, const char*
     inode_read_from_disk(dir_inum, &node);
     if (!S_ISDIR(node.mode)) return -ENOTDIR;
 
-    uint8_t *scratch = NULL;
-    create_buffer((void**)&scratch);
+    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
     if (!scratch) return -ENOMEM;
 
     uint32_t per = dir_entries_per_block();
@@ -1479,19 +1635,19 @@ int inode_readdir(uint32_t dir_inum, void *buf, int (*filler)(void*, const char*
     for (uint64_t b = 0; b < total_blocks; ++b) {
         uint32_t phy = inode_get_block_num(&node, b, scratch);
         if (phy == 0) continue;
-        if (read_data_block(scratch, phy) != 0) { free_buffer(scratch); return -EIO; }
+        if (read_data_block(scratch, phy) != 0) { free(scratch); return -EIO; }
         directory_entry *ents = (directory_entry*)scratch;
         for (uint32_t i = 0; i < per; ++i) {
             if (ents[i].inum != 0) {
                 if (filler(buf, ents[i].name, NULL, 0)) {
-                    free_buffer(scratch);
+                    free(scratch);
                     return 0;
                 }
             }
         }
     }
 
-    free_buffer(scratch);
+    free(scratch);
     return 0;
 }
 
@@ -1534,8 +1690,8 @@ int inode_init_root_if_needed(uint32_t max_inodes) {
     inode_global_init(max_inodes);
 
     // Check bitmap for inode 0
-    void *buf = NULL;
-    create_buffer(&buf);
+    void *buf = malloc(BYTES_PER_BLOCK);
+
     if (!buf) return -ENOMEM;
     uint32_t bitmap_blocknum = INODE_TABLE_START_BLOCK; // first bitmap block
     if (read_inode_block(buf, bitmap_blocknum) != 0) {
@@ -1543,12 +1699,12 @@ int inode_init_root_if_needed(uint32_t max_inodes) {
         memset(buf, 0, BYTES_PER_BLOCK);
         for (uint32_t b = 0; b < INODE_BITMAP_BLOCKS; ++b) {
             if (write_inode_block(buf, INODE_TABLE_START_BLOCK + b) != 0) {
-                free_buffer(buf); return -EIO;
+                free(buf); return -EIO;
             }
         }
         // allocate inode 0 by setting bit 0
         ((uint8_t*)buf)[0] |= 1u;
-        if (write_inode_block(buf, INODE_TABLE_START_BLOCK) != 0) { free_buffer(buf); return -EIO; }
+        if (write_inode_block(buf, INODE_TABLE_START_BLOCK) != 0) { free(buf); return -EIO; }
 
         // create root inode structure
         struct inode root;
@@ -1560,20 +1716,20 @@ int inode_init_root_if_needed(uint32_t max_inodes) {
         root.atime = root.mtime = root.ctime = time(NULL);
 
         // allocate a data block for root dir contents
-        uint8_t *scratch = NULL;
-        create_buffer((void**)&scratch);
-        if (!scratch) { free_buffer(buf); return -ENOMEM; }
+        uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+
+        if (!scratch) { free(buf); return -ENOMEM; }
         memset(scratch, 0, BYTES_PER_BLOCK);
         directory_entry *ents = (directory_entry*)scratch;
         ents[0].inum = 0; strncpy(ents[0].name, ".", MAX_FILENAME_LEN); ents[0].name[MAX_FILENAME_LEN] = '\0';
         ents[1].inum = 0; strncpy(ents[1].name, "..", MAX_FILENAME_LEN); ents[1].name[MAX_FILENAME_LEN] = '\0';
         uint32_t blocknum = 0;
-        if (write_to_next_free_block(scratch, &blocknum) != 0) { free_buffer(scratch); free_buffer(buf); return -EIO; }
+        if (write_to_next_free_block(scratch, &blocknum) != 0) { free(scratch); free(buf); return -EIO; }
         root.direct_blocks[0] = blocknum;
         inode_write_to_disk(0, &root);
-        free_buffer(scratch);
+        free(scratch);
     }
-    free_buffer(buf);
+    free(buf);
     return 0;
 }
 
