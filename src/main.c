@@ -2,9 +2,96 @@
  * This file contains the main() function for the 'frost' filesystem.
  * It handles command-line option parsing and starting the FUSE main loop.
  */
-#ifdef COMPILE_FOR_TESTS 
 
-#include "callbacks.h"
+#ifndef COMPILE_FOR_TESTS
+#define FUSE_USE_VERSION 31
+
+#include <fuse.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stddef.h>
+#include <assert.h>
+
+
+#include "fusefile.h"
+#include "fusespecial.h"
+
+void* frost_init(struct fuse_conn_info *conn,
+                        struct fuse_config *cfg)
+{
+    (void) conn;
+    cfg->kernel_cache = 1;
+
+    /* Test setting flags the old way */
+    fuse_set_feature_flag(conn, FUSE_CAP_ASYNC_READ);
+    fuse_unset_feature_flag(conn, FUSE_CAP_ASYNC_READ);
+
+    return NULL;
+}
+
+void frost_destroy(void *private_data)
+{
+    printf("FrostByteFS is being unmounted. Cleaning up...\n");
+}
+
+int frost_statfs(const char *path, struct statvfs *stbuf)
+{
+    // will edit the stbuf in place.
+    printf("frost_statfs(path=\"%s\", stbuf=%p)\n", path, (void*)stbuf);
+    return 0;
+}
+
+
+const struct fuse_operations frost_oper = {
+    .init         = frost_init,
+    .statfs      =  frost_statfs,
+    .destroy      = frost_destroy,
+    // dir
+    .mkdir        = frostbyte_mkdir,
+    .rmdir        = frostbyte_rmdir,
+    .opendir      = frostbyte_opendir,
+    .readdir      = frostbyte_readdir,
+    .releasedir   = frostbyte_releasedir,
+    .fsyncdir     = frostbyte_fsyncdir,
+    .symlink      = frostbyte_symlink,
+    .readlink     = frostbyte_readlink, 
+    // file
+    .open         = frostbyte_open,
+    .unlink       = frostbyte_unlink,
+    .rename       = frostbyte_rename,
+    .flush        = frostbyte_flush,
+    .release      = frostbyte_release,
+    .create       = frostbyte_create,
+    .mknod        = frostbyte_mknod,
+    .fsync        = frostbyte_fsync,
+    // attr
+    .getattr      = frostbyte_getattr,
+    .chmod        = frostbyte_chmod,
+    .chown        = frostbyte_chown,
+    .setxattr     = frostbyte_setxattr,
+    .getxattr     = frostbyte_getxattr,
+    .listxattr    = frostbyte_listxattr,
+    .removexattr  = frostbyte_removexattr,
+    .access       = frostbyte_check_access,
+    // data
+    .truncate     = frostbyte_truncate,
+    .read         = frostbyte_read,
+    .write        = frostbyte_write,
+    .bmap    = frostbyte_map_raw,
+    .fallocate     = frostbyte_allocate,
+    .copy_file_range = frostbyte_copy_file_range
+};
+
+
+struct options {
+int show_help;
+};
+struct options options;
+
+
+
 
 // Define the option-parsing macro
 #define OPTION(t, p)                                \
@@ -48,7 +135,8 @@ int main(int argc, char *argv[])
        string) */
     if (options.show_help) {
         show_help(argv[0]);
-        assert(fuse_opt_add_arg(&args, "--help") == 0);
+        int a = fuse_opt_add_arg(&args, "--help");
+        assert(a == 0);
         args.argv[0][0] = '\0';
     }
 
