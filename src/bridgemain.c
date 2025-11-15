@@ -1,0 +1,143 @@
+/*
+ * This file contains the main() function for the 'frost' filesystem.
+ * It handles command-line option parsing and starting the FUSE main loop.
+ */
+
+#ifndef COMPILE_FOR_TESTS
+#ifndef NOSKIP
+
+#include "fusefile.h"
+#include "fusespecial.h"
+
+void frost_init(struct fuse_conn_info *conn,
+                        struct fuse_config *cfg)
+{
+    (void) conn;
+    cfg->kernel_cache = 1;
+
+    /* Test setting flags the old way */
+    fuse_set_feature_flag(conn, FUSE_CAP_ASYNC_READ);
+    fuse_unset_feature_flag(conn, FUSE_CAP_ASYNC_READ);
+
+    return NULL;
+}
+
+void frost_destroy(void *private_data)
+{
+    printf("FrostByteFS is being unmounted. Cleaning up...\n");
+}
+
+void frost_statfs(const char *path, struct statvfs *stbuf)
+{
+    // will edit the stbuf in place.
+    printf("frost_statfs(path=\"%s\", stbuf=%p)\n", path, (void*)stbuf);
+}
+
+const struct fuse_operations frost_oper = {
+    .init         = frost_init,
+    .statfs      =  frost_statfs,
+    .destroy      = frost_destroy,
+    // dir
+    .mkdir        = frostbyte_mkdir,
+    .rmdir        = frostbyte_rmdir,
+    .opendir      = frostbyte_opendir,
+    .readdir      = frostbyte_readdir,
+    .releasedir   = frostbyte_releasedir,
+    .fsyncdir     = frostbyte_fsyncdir,
+    .symlink      = frostbyte_symlink,
+    .readlink     = frostbyte_readlink, 
+    // file
+    .open         = frostbyte_open,
+    .unlink       = frostbyte_unlink,
+    .rename       = frostbyte_rename,
+    .flush        = frostbyte_flush,
+    .release      = frostbyte_release,
+    .create       = frostbyte_create,
+    .mknod        = frostbyte_mknod,
+    .fsync        = frostbyte_fsync,
+    // attr
+    .getattr      = frostbyte_getattr,
+    .chmod        = frostbyte_chmod,
+    .chown        = frostbyte_chown,
+    .setxattr     = frostbyte_setxattr,
+    .getxattr     = frostbyte_getxattr,
+    .listxattr    = frostbyte_listxattr,
+    .removexattr  = frostbyte_removexattr,
+    .access       = frostbyte_check_access,
+    .statx        = frostbyte_statx,
+    // data
+    .truncate     = frostbyte_truncate,
+    .read         = frostbyte_read,
+    .write        = frostbyte_write,
+    .bmap    = frostbyte_map_raw,
+    .fallocate     = frostbyte_allocate,
+    .copy_file_range = frostbyte_copy_file_range
+};
+
+
+struct options {
+int show_help;
+};
+struct options options;
+
+
+
+
+// Define the option-parsing macro
+#define OPTION(t, p)                                \
+    { t, offsetof(struct options, p), 1 }
+
+// Define the option specification
+static const struct fuse_opt option_spec[] = {
+    OPTION("-h", show_help),
+    OPTION("--help", show_help),
+    FUSE_OPT_END
+};
+
+// Help function specific to this main file
+static void show_help(const char *progname)
+{
+    printf("usage: %s [options] <mountpoint>\n\n", progname);
+    printf("Filesystem is a write-only example.\n"
+           "Files created will be printed to stdout.\n"
+           "\n");
+}
+
+int main(int argc, char *argv[])
+{
+    int ret;
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+
+    /* Set defaults -- we have to use strdup so that
+       fuse_opt_parse can free the defaults if other
+       values are specified */
+    // Note: 'options' is the global struct from callbacks.c
+    // No defaults needed anymore
+
+    /* Parse options */
+    if (fuse_opt_parse(&args, &options, option_spec, NULL) == -1)
+        return 1;
+
+    /* When --help is specified, first print our own file-system
+       specific help text, then signal fuse_main to show
+       additional help (by adding `--help` to the options again)
+       without usage: line (by setting argv[0] to the empty
+       string) */
+    if (options.show_help) {
+        show_help(argv[0]);
+        int a = fuse_opt_add_arg(&args, "--help");
+        assert(a == 0);
+        args.argv[0][0] = '\0';
+    }
+
+    /*
+     * Call the FUSE main loop.
+     * 'frost_oper' is the global struct from callbacks.c
+     */
+    ret = fuse_main(args.argc, args.argv, &frost_oper, NULL);
+    fuse_opt_free_args(&args);
+    return ret;
+}
+
+#endif
+#endif
