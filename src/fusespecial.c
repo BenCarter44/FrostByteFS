@@ -16,9 +16,9 @@ int frostbyte_mkdir(const char *path, mode_t mode)
     printf("frostbyte_mkdir(path=\"%s\", mode=%o)\n", path, mode);
     return 0;
 } 
-int frostbyte_rmdir(const char *path, mode_t mode)
+int frostbyte_rmdir(const char *path)
 {
-    printf("frostbyte_rmdir(path=\"%s\", mode=%o)\n", path, mode);
+    printf("frostbyte_rmdir(path=\"%s\")\n", path);
     return 0;
 }
 

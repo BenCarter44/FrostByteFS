@@ -2,7 +2,7 @@
  * This file contains the main() function for the 'frost' filesystem.
  * It handles command-line option parsing and starting the FUSE main loop.
  */
-#ifndef COMPILE_FOR_TESTS
+#ifdef COMPILE_FOR_TESTS 
 
 #include "callbacks.h"
 

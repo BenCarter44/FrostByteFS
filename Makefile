@@ -11,7 +11,7 @@ CC = gcc
 CFLAGS = -Wall -Iinclude `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64
 
 # Source files
-SRCS = src/main.c src/callbacks.c
+SRCS = src/*.c
 
 
 # --- Rules ---
@@ -22,7 +22,7 @@ all: $(TARGET)
 
 # Rule to build the executable
 # Compiles and links all source files in one step
-$(TARGET): $(SRCS)
+$(TARGET): src/bridgemain.c
 	@echo "Compiling and linking $(TARGET)..."
 	$(CC) -o $(TARGET) $(SRCS) $(CFLAGS)
 	@echo "$(TARGET) build complete."

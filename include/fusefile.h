@@ -28,17 +28,17 @@ int frostbyte_fsync(const char* path, int fint, struct fuse_file_info* finfo);
 // Attributes
 int frostbyte_getattr(const char* path, struct stat* fstat, struct fuse_file_info* finfo);
 int frostbyte_chmod(const char* path, mode_t fmode, struct fuse_file_info* finfo);
-int frostbyte_chown(const char* path, mode_t fmode, struct fuse_file_info* finfo);
+int frostbyte_chown(const char* path, uid_t user, gid_t group, struct fuse_file_info* finfo);
 int frostbyte_setxattr(const char* path, const char* key, const char* val, size_t len, int fint);
 int frostbyte_getxattr(const char* path, const char* key, char* val, size_t len);
 int frostbyte_listxattr(const char* path, char* val, size_t len);
 int frostbyte_removexattr(const char* path, const char* key);
 int frostbyte_check_access(const char* path, int perm);
-int frostbyte_statx(const char* path, int flags, int mask, struct statx* stxbuf, struct fuse_file_info* finfo);
+// int* frostbyte_statx(const char* path, int flags, int mask, struct statx* stxbuf, struct fuse_file_info* finfo);
 
 // Data
 int frostbyte_truncate(const char* path, off_t offset, struct fuse_file_info* finfo);
-int frostbyte_read(const char* path, char* buffer, size_t len, struct fuse_file_info* finfo);
+int frostbyte_read(const char* path, char* buffer, size_t len, off_t offset, struct fuse_file_info* finfo);
 int frostbyte_write(const char* path, const char* buffer, size_t len, off_t offset, struct fuse_file_info* finfo);
 int frostbyte_map_raw(const char* path, size_t blocksize, uint64_t *idx);
 // int frostbyte_write_buffer(const char* path, struct fuse_bufvec* buf, off_t offset, struct fuse_file_info* finfo);

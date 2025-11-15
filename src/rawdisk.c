@@ -1,7 +1,6 @@
 #include "rawdisk.h"
 
 // private variables.
-static int disk_file_descriptor = 0;
 static char* disk_name = NULL;
 static int disk_fd = 0;
 
@@ -18,7 +17,9 @@ int create_buffer(void** buffer)
 
 int free_buffer(void* buffer)
 {
+    if(buffer == NULL) { return -1;}
     free(buffer);
+    return 0;
 }
 
 

@@ -4,12 +4,21 @@
  */
 
 #ifndef COMPILE_FOR_TESTS
-#ifndef NOSKIP
+#define FUSE_USE_VERSION 31
+
+#include <fuse.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stddef.h>
+#include <assert.h>
+
 
 #include "fusefile.h"
 #include "fusespecial.h"
 
-void frost_init(struct fuse_conn_info *conn,
+void* frost_init(struct fuse_conn_info *conn,
                         struct fuse_config *cfg)
 {
     (void) conn;
@@ -27,11 +36,13 @@ void frost_destroy(void *private_data)
     printf("FrostByteFS is being unmounted. Cleaning up...\n");
 }
 
-void frost_statfs(const char *path, struct statvfs *stbuf)
+int frost_statfs(const char *path, struct statvfs *stbuf)
 {
     // will edit the stbuf in place.
     printf("frost_statfs(path=\"%s\", stbuf=%p)\n", path, (void*)stbuf);
+    return 0;
 }
+
 
 const struct fuse_operations frost_oper = {
     .init         = frost_init,
@@ -64,7 +75,6 @@ const struct fuse_operations frost_oper = {
     .listxattr    = frostbyte_listxattr,
     .removexattr  = frostbyte_removexattr,
     .access       = frostbyte_check_access,
-    .statx        = frostbyte_statx,
     // data
     .truncate     = frostbyte_truncate,
     .read         = frostbyte_read,
@@ -139,5 +149,4 @@ int main(int argc, char *argv[])
     return ret;
 }
 
-#endif
 #endif

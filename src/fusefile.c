@@ -113,9 +113,10 @@ int frostbyte_chmod(const char* path, mode_t fmode, struct fuse_file_info* finfo
     return 0;
 }
 
-int frostbyte_chown(const char* path, mode_t fmode, struct fuse_file_info* finfo) 
+int frostbyte_chown(const char* path, uid_t user, gid_t group, struct fuse_file_info* finfo) 
 {
-    printf("frostbyte_chown(path=\"%s\", fmode=%o)\n", path, fmode);
+    printf("frostbyte_chown(path=\"%s\", uid=%u, gid=%u)\n",
+           path, (unsigned int)user, (unsigned int)group);
     print_fuse_info(finfo);
     return 0;
 }
@@ -154,18 +155,18 @@ int frostbyte_check_access(const char* path, int perm)
     return 0;
 }
 
-int frostbyte_statx(const char* path, int flags, int mask, struct statx* stxbuf, struct fuse_file_info* finfo) 
-{
-    printf("frostbyte_statx(path=\"%s\", flags=%d, mask=%d, stxbuf=%p)\n",
-           path, flags, mask, (void*)stxbuf);
-    print_fuse_info(finfo);
-    return 0;
-}
+// int frostbyte_statx(const char* path, int flags, int mask, struct statx* stxbuf, struct fuse_file_info* finfo) 
+// {
+//     printf("frostbyte_statx(path=\"%s\", flags=%d, mask=%d, stxbuf=%p)\n",
+//            path, flags, mask, (void*)stxbuf);
+//     print_fuse_info(finfo);
+//     return 0;
+// }
 
 
 /* ----------------------------- Data I/O ----------------------------- */
 
-int frostbyte_trucate(const char* path, off_t offset, struct fuse_file_info* finfo) 
+int frostbyte_truncate(const char* path, off_t offset, struct fuse_file_info* finfo) 
 {
     printf("frostbyte_trucate(path=\"%s\", offset=%ld)\n",
            path, (long)offset);
@@ -173,10 +174,10 @@ int frostbyte_trucate(const char* path, off_t offset, struct fuse_file_info* fin
     return 0;
 }
 
-int frostbyte_read(const char* path, char* buffer, size_t len, struct fuse_file_info* finfo) 
+int frostbyte_read(const char* path, char* buffer, size_t len, off_t offset, struct fuse_file_info* finfo) 
 {
-    printf("frostbyte_read(path=\"%s\", buffer=%p, len=%zu)\n",
-           path, (void*)buffer, len);
+    printf("frostbyte_read(path=\"%s\", buffer=%p, len=%zu, offset=%ld)\n",
+           path, (void*)buffer, len, offset);
     print_fuse_info(finfo);
     return 0;
 }

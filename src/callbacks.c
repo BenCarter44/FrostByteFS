@@ -3,7 +3,9 @@
  * for the 'frost' filesystem.
  */
 
+
 #include "callbacks.h"
+#ifdef OLD_CODE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -186,3 +188,5 @@ const struct fuse_operations frost_oper = {
     .create       = frost_create,
     .truncate     = frost_truncate,
 };
+
+#endif

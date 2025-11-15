@@ -223,6 +223,7 @@ int format_super_block()
     buffer[BYTES_PER_BLOCK-1] = 0xF5;
     write_block_raw(buffer, SUPER_BLOCK);
     free_buffer(buffer);
+    return 0;
 }
 
 bool allocator_check_valid_super_block()
@@ -286,10 +287,7 @@ int clear_ref_blocks()
     }
     int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + REF_BLOCKS - 1 - counter);
     free_buffer(buffer);
-    if(ret < 0)
-    {
-        return ret;
-    }
+    return ret;
 }
 
 int clear_inode_blocks()
@@ -310,4 +308,5 @@ int clear_inode_blocks()
     }
     printf("\n");
     free_buffer(buffer);
+    return 0;
 }
