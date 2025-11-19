@@ -1,5 +1,14 @@
 #include "fusefile.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+#include <errno.h>
+#include <pthread.h>
+#include <limits.h>
+#include <assert.h>
+
 /**
  * @file fusedirectory.c
  * @author your name (you@domain.com)
@@ -42,79 +51,6 @@ void print_fuse_info(struct fuse_file_info* finfo)
 // TODO: Fetch path function (get INODE number from path). Move the func to here instead of in inode.h
 // Remove all "fuse stuff" in INODE layer. Fusefile / fusedirectory are the only ones that can do "fuse stuff"
 // Translate fuse calls to inode calls. 
-
-/* Private Functions */
-int get_inode_from_path(const char* path, uint32_t* inode, uint32_t* previous);
-static int get_inode_from_path_rec(const char* path, uint32_t inode_root, uint32_t* inode, uint32_t* previous);
-
-static const char* basename(const char* path) {
-    const char* slash = strrchr(path, '/');
-    return slash ? slash + 1 : path;
-}
-
-
-
-int get_inode_from_path(const char* path, uint32_t* inode, uint32_t* previous)
-{
-    if(strcmp("/", path) == 0)
-    {
-        *inode = return_root_inode();
-        *previous = return_root_inode();
-        return 0;
-    }
-    return get_inode_from_path_rec(&path[1], return_root_inode(), inode, previous);
-}
-
-
-static int get_inode_from_path_rec(const char* path, uint32_t inode_root, uint32_t* inode, uint32_t* previous)
-{
-    printf("Processing '%s' Root Node: %u \n",path, inode_root);
-    // if is a file and path is finished, return root
-    if(!is_inode_a_directory(inode_root) && path[0] == 0)
-    {
-        *inode = inode_root;
-        return 0;
-    }
-    // if is a file and path is not finished, return error.
-    if(!is_inode_a_directory(inode_root))
-    {
-        return -FILE_NOT_FOUND;
-    }
-    // if is a directory and file is finished, return inode
-    if(is_inode_a_directory(inode_root) && path[0] == 0)
-    {
-        *inode = inode_root;
-        return 0;
-    }
-
-    // path still has contents
-    
-    // get next path
-    char buffer[MAX_FILENAME_LENGTH];
-    for(int i = 0; i < MAX_FILENAME_LENGTH; i++)
-    {
-        buffer[i] = 0;
-    }
-    uint32_t index = 0; 
-    while(path[index] != 0 && path[index] != '/')
-    {
-        buffer[index] = path[index];
-        index++;
-    }
-
-    int i = get_inode_given_name(inode_root, buffer);
-    if(i < 0)
-    {
-        return -FILE_NOT_FOUND;
-    }
-    if(path[index] == 0)
-    {
-        return get_inode_from_path_rec(NULL, i, inode,previous);
-    }
-    *previous = inode_root;
-    return get_inode_from_path_rec(&path[index+1], i, inode, previous);    
-
-}
 
 
 
@@ -206,13 +142,14 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     }
 
     uint32_t inode = 0;
-    uint32_t parent_inode = 0;
     
-    FrostByteFile* file = NULL;
-
     // Is it a new file?
-    r = get_inode_from_path(path, &inode, &parent_inode);
-    if(r == -FILE_NOT_FOUND)
+    r = inode_find_by_path(path);
+    if(r < 0 && r != -ENOENT)
+    {
+        return r;
+    }
+    if(r == -ENOENT)
     {
         // file is new file
         if(!(finfo->flags & O_CREAT))
@@ -221,10 +158,14 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
             return -ENOENT;
         }
         // create new file
-        inode = inode_create(parent_inode, basename(path));
-        file = file_create_new(inode);
-        finfo->fh = (uint64_t)file;
+        r = inode_create(path, S_IFREG | finfo->flags, &inode);
+        if(r < 0)
+        {
+            return r;
+        }
+        finfo->fh = (uint64_t)inode;
     }
+    inode = (uint32_t)r;
     if(finfo->flags & O_EXCL && r != -FILE_NOT_FOUND)
     {
         errno = EEXIST;
@@ -234,16 +175,11 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     // What should be done if new file?
     if(finfo->flags & O_TRUNC)
     {
-        file_truncate(file, 0);
-    }
-
-    if(finfo->flags & O_APPEND)
-    {
-        file_seek(file, 1, 0);
+        inode_truncate(inode, 0);
     }
 
     // What should the permissions be?
-    file_set_access(file, finfo->flags);
+    // file_set_access(file, finfo->flags);
      
     printf("frostbyte_open(path=\"%s\")\n", path);
     print_fuse_info(finfo);
@@ -256,61 +192,32 @@ int frostbyte_unlink(const char* path)
 {
     // see https://www.man7.org/linux/man-pages/man2/open.2.html for error codes
     
-    // file not found!
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
-    }
-
-    if(is_inode_a_directory(inode))
-    {
-        errno = EISDIR;
-        return -EISDIR;
-    };
-
-    inode_unlink(inode); 
     printf("frostbyte_unlink(path=\"%s\")\n", path);
-    return 0;
+    return inode_unlink(path);
 }
 
 int frostbyte_rename(const char* path_old, const char* path_new, unsigned int flags) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path_old, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path_old);
+    if (inode < 0) {
+        return inode;
     }
-
-    inode_rename(inode, path_new);
-
+    
     printf("frostbyte_rename(old=\"%s\", new=\"%s\", flags=%u)\n",
-           path_old, path_new, flags);
-    return 0;
+        path_old, path_new, flags);
+    return inode_rename(inode, path_new);
+
+    // return 0;
 }
 
 int frostbyte_flush(const char* path, struct fuse_file_info* finfo) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
-    if(is_inode_a_directory(inode))
-    {
-        errno = EISDIR;
-        return -EISDIR;
-    };
-
     // Do nothing?
 
     printf("frostbyte_flush(path=\"%s\")\n", path);
@@ -320,27 +227,17 @@ int frostbyte_flush(const char* path, struct fuse_file_info* finfo)
 
 int frostbyte_release(const char* path, struct fuse_file_info* finfo) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
-    if(is_inode_a_directory(inode))
-    {
-        errno = EISDIR;
-        return -EISDIR;
-    };
 
     if(finfo->fh == 0)
     {
         errno = EBADF;
         return -EBADF;
     }
-
-    file_close((FrostByteFile*)finfo->fh);
 
     printf("frostbyte_release(path=\"%s\")\n", path);
     print_fuse_info(finfo);
@@ -375,18 +272,29 @@ int frostbyte_fsync(const char* path, int fint, struct fuse_file_info* finfo)
 
 /* ----------------------------- Attributes ----------------------------- */
 
-int frostbyte_getattr(const char* path, struct stat* fstat, struct fuse_file_info* finfo) 
+int frostbyte_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* finfo) 
 {
     uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
-    inode_fstat(inode, fstat);
+    struct inode node;
+    inode_read_from_disk(inode, &node);
+
+    // --- 3. Copy stats from iNode to stbuf ---
+    memset(stbuf, 0, sizeof(struct stat));
+    stbuf->st_mode = node.mode;
+    stbuf->st_nlink = node.nlink;
+    stbuf->st_uid = node.uid;
+    stbuf->st_gid = node.gid;
+    stbuf->st_size = node.size;
+    stbuf->st_ino = inode;
+    stbuf->st_atime = node.atime;
+    stbuf->st_mtime = node.mtime;
+    stbuf->st_ctime = node.ctime;
+
 
     printf("frostbyte_getattr(path=\"%s\", stat=%p)\n", path, (void*)fstat);
     print_fuse_info(finfo);
@@ -395,13 +303,10 @@ int frostbyte_getattr(const char* path, struct stat* fstat, struct fuse_file_inf
 
 int frostbyte_chmod(const char* path, mode_t fmode, struct fuse_file_info* finfo) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
     // change permissions
@@ -414,13 +319,10 @@ int frostbyte_chmod(const char* path, mode_t fmode, struct fuse_file_info* finfo
 
 int frostbyte_chown(const char* path, uid_t user, gid_t group, struct fuse_file_info* finfo) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
     // change permissions
@@ -434,13 +336,10 @@ int frostbyte_chown(const char* path, uid_t user, gid_t group, struct fuse_file_
 
 int frostbyte_setxattr(const char* path, const char* key, const char* val, size_t len, int fint) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
     inode_setxattr(inode, key, val, len, fint);
@@ -452,13 +351,10 @@ int frostbyte_setxattr(const char* path, const char* key, const char* val, size_
 
 int frostbyte_getxattr(const char* path, const char* key, char* val, size_t len) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
     inode_getxattr(inode, key, val, len);
@@ -470,13 +366,10 @@ int frostbyte_getxattr(const char* path, const char* key, char* val, size_t len)
 
 int frostbyte_listxattr(const char* path, char* val, size_t len) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
     inode_listxattr(inode, val, len);
@@ -488,13 +381,10 @@ int frostbyte_listxattr(const char* path, char* val, size_t len)
 
 int frostbyte_removexattr(const char* path, const char* key) 
 {
-    uint32_t inode = 0;
-    uint32_t previous = 0;
-    int r = get_inode_from_path(path, &inode, &previous);
-    if(r == -FILE_NOT_FOUND)
-    {
-        errno = ENOENT;
-        return -ENOENT;
+    int inode = 0;
+    inode = inode_find_by_path(path);
+    if (inode < 0) {
+        return inode;
     }
 
     inode_removexattr(inode, key);
@@ -535,45 +425,46 @@ int frostbyte_removexattr(const char* path, const char* key)
 
 int frostbyte_truncate(const char* path, off_t offset, struct fuse_file_info* finfo) 
 {
-    if(finfo->fh == 0)
-    {
-        errno = EBADF;
-        return -EBADF;
-    }
-    file_truncate((FrostByteFile*)finfo->fh, offset);
+    printf("L3 (FUSE): frost_truncate('%s', size %ld) called.\n", path, offset);
 
-    printf("frostbyte_trucate(path=\"%s\", offset=%ld)\n",
-           path, (long)offset);
-    print_fuse_info(finfo);
-    return 0;
+    // --- 1. Find the iNode (L2) ---
+    int inum = inode_find_by_path(path);
+    if (inum < 0) {
+        return inum;
+    }
+    
+    // --- 2. Call the iNode layer's truncate function (L2) ---
+    return inode_truncate(inum, offset);
 }
 
 int frostbyte_read(const char* path, char* buffer, size_t len, off_t offset, struct fuse_file_info* finfo) 
 {
-    if(finfo->fh == 0)
-    {
-        errno = EBADF;
-        return -EBADF;
+    // (void) fi; // If we used fi->fh, we'd use it here
+    printf("L3 (FUSE): frost_read('%s', size %ld, offset %ld) called.\n", path, len, offset);
+
+    // --- 1. Find the iNode (L2) ---
+    int inum = inode_find_by_path(path);
+    if (inum < 0) {
+        return inum;
     }
-    int r = file_read((FrostByteFile*)finfo->fh, buffer, len, offset);
-    printf("frostbyte_read(path=\"%s\", buffer=%p, len=%zu, offset=%ld)\n",
-           path, (void*)buffer, len, offset);
-    print_fuse_info(finfo);
-    return r;
+
+    // --- 2. Call the iNode layer's read function (L2) ---
+    return inode_read(inum, buffer, len, offset);
 }
 
 int frostbyte_write(const char* path, const char* buffer, size_t len, off_t offset, struct fuse_file_info* finfo) 
 {
-    if(finfo->fh == 0)
-    {
-        errno = EBADF;
-        return -EBADF;
+    // (void) fi;
+    printf("L3 (FUSE): frost_write('%s', size %ld, offset %ld) called.\n", path, len, offset);
+
+    // --- 1. Find the iNode (L2) ---
+    int inum = inode_find_by_path(path);
+    if (inum < 0) {
+        return inum;
     }
-    int r = file_write((FrostByteFile*)finfo->fh, buffer, len, offset);
-    printf("frostbyte_write(path=\"%s\", buffer=%p, len=%zu, offset=%ld)\n",
-           path, (void*)buffer, len, offset);
-    print_fuse_info(finfo);
-    return r;
+
+    // --- 2. Call the iNode layer's write function (L2) ---
+    return inode_write(inum, buffer, len, offset);
 }
 
 
@@ -610,13 +501,27 @@ ssize_t frostbyte_copy_file_range(const char *path_in,
                                   size_t size,
                                   int flags) 
 {
-    if(fi_in->fh == 0 || fi_out->fh == 0)
-    {
-        errno = EBADF;
-        return -EBADF;
+    int inum = inode_find_by_path(path_in);
+    if (inum < 0) {
+        return inum;
     }
-    int r = file_copy_file_range((FrostByteFile*)fi_in->fh, offset_in, (FrostByteFile*)fi_out->fh, offset_out, size);
+    int inum2 = inode_find_by_path(path_out);
+    if (inum2 < 0) {
+        return inum2;
+    }
+    // assumes everything fits in memory!
+    uint8_t* buffer = (uint8_t*)malloc(size);
 
+    int r = inode_read(inum, buffer, size, offset_in);
+    if(r < 0)
+    {
+        return r;
+    }
+    r = inode_write(inum, buffer, size, offset_out);
+    if(r < 0)
+    {
+        return r;
+    }
     printf("frostbyte_copy_file_range(path_in=\"%s\", offset_in=%ld, path_out=\"%s\", "
            "offset_out=%ld, size=%zu, flags=%d)\n",
            path_in, (long)offset_in,

@@ -44,3 +44,14 @@ const char* file_layer_error_to_string(int err) {
             return "File Layer: Unknown Error";
     }
 }
+
+const char* inode_error_to_string(int err) {
+    switch (err) {
+        case -INODE_BUFFER_ALLOCATION_FAILED:
+            return "INODE_BUFFER_ALLOCATION_FAILED: Trying to allocate a buffer of a block size in memory";
+        case 0:
+            return "INODE: OK";
+        default:
+            return allocator_error_to_string(err);
+    }
+}

@@ -4,17 +4,6 @@
  */
 
 #ifndef COMPILE_FOR_TESTS
-#define FUSE_USE_VERSION 31
-
-#include <fuse.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stddef.h>
-#include <assert.h>
-
-
 #include "fusefile.h"
 #include "fusespecial.h"
 
@@ -24,11 +13,38 @@ void* frost_init(struct fuse_conn_info *conn,
     (void) conn;
     cfg->kernel_cache = 1;
 
-    /* Test setting flags the old way */
-    fuse_set_feature_flag(conn, FUSE_CAP_ASYNC_READ);
-    fuse_unset_feature_flag(conn, FUSE_CAP_ASYNC_READ);
+    // Get the disk path string from fuse_main's private_data
+    char *disk_path = (char*) fuse_get_context()->private_data;
 
-    return NULL;
+    printf("L3 (FUSE): frost_init() called.\n");
+    printf("L3 (FUSE): Opening disk: %s\n", disk_path);
+
+    // --- 1. Open the disk (L1) ---
+    if (open_disk(disk_path) != 0) {
+        fprintf(stderr, "FATAL: Failed to open disk image: %s\n", disk_path);
+        exit(1); // Cannot continue if disk won't open
+    }
+
+    // --- 2. Check if disk is formatted (L1) ---
+    if (!allocator_check_valid_super_block()) {
+        printf("L3 (FUSE): Unformatted disk. Formatting...\n");
+
+        // Format Layer 1 (Allocator)
+        format_super_block();
+        clear_ref_blocks();
+        clear_inode_blocks(); // This just clears the iNode *region*
+
+        printf("L3 (FUSE): Formatting Layer 2 (iNode system)...\n");
+        
+        // Initialize Layer 2 (iNode system)
+        inode_init_root_if_needed();
+
+        printf("L3 (FUSE): Format complete.\n");
+    } else {
+        printf("L3 (FUSE): Disk mounted successfully.\n");
+    }
+
+    return NULL; // No private data needed for other callbacks
 }
 
 void frost_destroy(void *private_data)
@@ -117,7 +133,9 @@ int main(int argc, char *argv[])
 {
     int ret;
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-
+    fuse_opt_add_arg(&args, "-o");
+    fuse_opt_add_arg(&args, "default_permissions");
+   
     /* Set defaults -- we have to use strdup so that
        fuse_opt_parse can free the defaults if other
        values are specified */
@@ -144,6 +162,7 @@ int main(int argc, char *argv[])
      * Call the FUSE main loop.
      * 'frost_oper' is the global struct from callbacks.c
      */
+
     ret = fuse_main(args.argc, args.argv, &frost_oper, NULL);
     fuse_opt_free_args(&args);
     return ret;

@@ -72,7 +72,7 @@ int read_block_raw(uint8_t* buffer, uint32_t block_number)
     return 0;
 }
 
-int write_block_raw(uint8_t* buffer, uint32_t block_number)
+int write_block_raw(const uint8_t* buffer, uint32_t block_number)
 {
     if(disk_name == NULL)
     {

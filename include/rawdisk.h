@@ -14,6 +14,7 @@
 
 #define _GNU_SOURCE
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(3, 12)
+#include <fuse.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -37,7 +38,7 @@ int open_disk(char* disk_name);
 int close_disk();
 
 int read_block_raw(uint8_t* buffer, uint32_t block_number);
-int write_block_raw(uint8_t* buffer, uint32_t block_number);
+int write_block_raw(const uint8_t* buffer, uint32_t block_number);
 
 
 
