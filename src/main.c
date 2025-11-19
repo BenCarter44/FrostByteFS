@@ -50,6 +50,8 @@ void* frost_init(struct fuse_conn_info *conn,
 void frost_destroy(void *private_data)
 {
     printf("FrostByteFS is being unmounted. Cleaning up...\n");
+    // --- Close the disk (L1) ---
+    close_disk();
 }
 
 int frost_statfs(const char *path, struct statvfs *stbuf)

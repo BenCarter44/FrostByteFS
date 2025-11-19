@@ -81,7 +81,6 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset);
 int inode_readdir(uint32_t inum, void *buf, fuse_fill_dir_t filler);
 
 int inode_unlink(const char *path);
-int inode_rmdir(const char *path);
 int inode_truncate(uint32_t inum, off_t size);
 
 // New helpers to read/write the inode structs themselves
@@ -96,6 +95,7 @@ int inode_rename(uint32_t inode, const char *to);
 int inode_chown(uint32_t inode, uid_t user, gid_t group);
 int inode_chmod(uint32_t inode, mode_t fmode);
 
+int inode_rmdir(const char *path);
 int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len, int fint);
 int inode_getxattr(uint32_t inode, const char* key, const char* val, size_t len);
 int inode_listxattr(uint32_t inode, char* val, size_t len);

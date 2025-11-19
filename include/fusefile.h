@@ -1,8 +1,17 @@
+/**
+ * @file fusefile.h
+ * @author Benjamin Carter, Towhidul Islam, Sohaib
+ * @brief This file handles all the file-related callbacks.
+ * @version 0.1
+ * @date 2025-11-18
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
 #ifndef FUSE_FILE_H
 #define FUSE_FILE_H
 
 #include "inode.h"
-#include "file.h"
 #include "error.h"
 
 /* Callbacks necessary for files */

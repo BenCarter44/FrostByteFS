@@ -1,3 +1,20 @@
+/**
+ * @file fusefile.c
+ * @author Benjamin Carter, Towhidul Islam, Sohaib
+ * @brief This handles all fuse callbacks relating to files.
+ * @version 0.1
+ * @date 2025-11-14
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
+
+ /*
+ 
+ This file has all the file callbacks and calls the inode functions respectively.
+  
+ */
+
 #include "fusefile.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,16 +26,6 @@
 #include <limits.h>
 #include <assert.h>
 
-/**
- * @file fusedirectory.c
- * @author your name (you@domain.com)
- * @brief 
- * @version 0.1
- * @date 2025-11-14
- * 
- * @copyright Copyright (c) 2025
- * 
- */
 
 
  /* Other Functions */

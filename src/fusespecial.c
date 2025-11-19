@@ -1,8 +1,18 @@
 #include "fusespecial.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+#include <errno.h>
+#include <pthread.h>
+#include <limits.h>
+#include <assert.h>
+
 /**
- * @file fusedirectory.c
- * @author your name (you@domain.com)
- * @brief 
+ * @file fusespecial.c
+ * @author Benjamin Carter, Towhildul Islam, Sohaib
+ * @brief These are all the FUSE operators for directory / symlink operations.
  * @version 0.1
  * @date 2025-11-14
  * 
@@ -13,13 +23,21 @@
  /* Directory Operations */
 int frostbyte_mkdir(const char *path, mode_t mode)
 {
-    printf("frostbyte_mkdir(path=\"%s\", mode=%o)\n", path, mode);
-    return 0;
+    printf("L3 (FUSE): frost_mkdir('%s', mode %o) called.\n", path, mode);
+    
+    // struct fuse_context *ctx = fuse_get_context();
+    
+    // --- Call the iNode layer's create function (L2) ---
+    uint32_t inode = 0;
+    int r = inode_create(path, mode | S_IFDIR, &inode);
+    return r;
 } 
 int frostbyte_rmdir(const char *path)
 {
-    printf("frostbyte_rmdir(path=\"%s\")\n", path);
-    return 0;
+    printf("L3 (FUSE): frost_rmdir('%s') called.\n", path);
+    
+    // --- Call the iNode layer's rmdir function (L2) ---
+    return inode_rmdir(path);
 }
 
 int frostbyte_opendir(const char *path, struct fuse_file_info *fi)
@@ -33,10 +51,19 @@ int frostbyte_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                       off_t offset, struct fuse_file_info *fi,
                       enum fuse_readdir_flags flags)
 {
-    printf("frostbyte_readdir(path=\"%s\", offset=%ld, flags=%d)\n",
-           path, (long)offset, flags);
-    print_fuse_info(fi);
-    return 0;
+    (void) offset;
+    (void) fi;
+    (void) flags;
+    printf("L3 (FUSE): frost_readdir('%s') called.\n", path);
+
+    // --- 1. Find the iNode for the directory path (L2) ---
+    int inum = inode_find_by_path(path);
+    if (inum < 0) {
+        return inum;
+    }
+
+    // --- 2. Call the iNode layer's readdir function (L2) ---
+    return inode_readdir(inum, buf, filler);
 }
 
 int frostbyte_releasedir(const char *path, struct fuse_file_info *fi)
