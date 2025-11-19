@@ -46,7 +46,7 @@ test: $(TEST_TARGET)
 
 $(TEST_TARGET): $(TEST_SRCS)
 	@echo "Compiling unit tests..."
-	$(CC) -Wall -g -Iinclude -lpthread -o $(TEST_TARGET) $(TEST_SRCS)
+	$(CC) -Wall -g -Iinclude -lpthread `pkg-config fuse3 --cflags --libs` -o $(TEST_TARGET) $(TEST_SRCS)
 	@echo "Test build complete."
 
 
