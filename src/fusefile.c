@@ -522,19 +522,22 @@ ssize_t frostbyte_copy_file_range(const char *path_in,
     int r = inode_read(inum, buffer, size, offset_in);
     if(r < 0)
     {
+        free(buffer);
         return r;
     }
     r = inode_write(inum, buffer, size, offset_out);
     if(r < 0)
     {
+        free(buffer);
         return r;
     }
+    free(buffer);
     printf("frostbyte_copy_file_range(path_in=\"%s\", offset_in=%ld, path_out=\"%s\", "
            "offset_out=%ld, size=%zu, flags=%d)\n",
            path_in, (long)offset_in,
            path_out, (long)offset_out,
            size, flags);
-
+    
     print_fuse_info(fi_in);
     print_fuse_info(fi_out);
     return r;
