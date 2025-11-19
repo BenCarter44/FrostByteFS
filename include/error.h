@@ -16,5 +16,7 @@ const char* raw_disk_error_to_string(int err);
 #define ALLOCATOR_OUT_OF_BOUNDS 7
 const char* allocator_error_to_string(int err);
 
+// File Layer Errors
+#define FILE_NOT_FOUND 9
 
 #endif

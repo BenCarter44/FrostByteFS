@@ -22,7 +22,7 @@ all: $(TARGET)
 
 # Rule to build the executable
 # Compiles and links all source files in one step
-$(TARGET): src/bridgemain.c
+$(TARGET): src/main.c
 	@echo "Compiling and linking $(TARGET)..."
 	$(CC) -o $(TARGET) $(SRCS) $(CFLAGS)
 	@echo "$(TARGET) build complete."

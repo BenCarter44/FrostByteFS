@@ -33,3 +33,14 @@ const char* allocator_error_to_string(int err) {
             return raw_disk_error_to_string(err);
     }
 }
+
+const char* file_layer_error_to_string(int err) {
+    switch (err) {
+        case -FILE_NOT_FOUND:
+            return "FILE_NOT_FOUND: File not found";
+        case 0:
+            return "File Layer: OK";
+        default:
+            return "File Layer: Unknown Error";
+    }
+}

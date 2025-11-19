@@ -64,7 +64,7 @@ const struct fuse_operations frost_oper = {
     .flush        = frostbyte_flush,
     .release      = frostbyte_release,
     .create       = frostbyte_create,
-    .mknod        = frostbyte_mknod,
+    // .mknod        = frostbyte_mknod,
     .fsync        = frostbyte_fsync,
     // attr
     .getattr      = frostbyte_getattr,
@@ -74,13 +74,13 @@ const struct fuse_operations frost_oper = {
     .getxattr     = frostbyte_getxattr,
     .listxattr    = frostbyte_listxattr,
     .removexattr  = frostbyte_removexattr,
-    .access       = frostbyte_check_access,
+    // .access       = frostbyte_check_access,
     // data
     .truncate     = frostbyte_truncate,
     .read         = frostbyte_read,
     .write        = frostbyte_write,
-    .bmap    = frostbyte_map_raw,
-    .fallocate     = frostbyte_allocate,
+    // .bmap    = frostbyte_map_raw,
+    // .fallocate     = frostbyte_allocate,
     .copy_file_range = frostbyte_copy_file_range
 };
 
