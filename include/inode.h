@@ -92,7 +92,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node);
 int return_root_inode(); // done, just returns 0
 
 // int inode_rename(uint32_t inode, const char *to);
-int inode_remane(const char *from, const char *to);
+int inode_rename(const char *from, const char *to)
 int inode_chown(uint32_t inode, uid_t user, gid_t group);
 int inode_chmod(uint32_t inode, mode_t fmode);
 
@@ -101,5 +101,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
 int inode_getxattr(uint32_t inode, const char* key, const char* val, size_t len);
 int inode_listxattr(uint32_t inode, char* val, size_t len);
 int inode_removexattr(uint32_t inode, const char* key);
+
+int inode_link(uint32_t inum, const char *newpath);
 
 #endif

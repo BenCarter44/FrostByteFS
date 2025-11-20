@@ -96,24 +96,49 @@ int frostbyte_add_readdir_entry(void *buf, const char *name,
 
 /* Link Operations */
 
-int frostbyte_readlink(const char *path, char *buf, size_t size)
-{
-    printf("frostbyte_readlink(path=\"%s\", buf=%p, size=%zu)\n",
-           path, (void*)buf, size);
-    return 0;
-}   
-
 int frostbyte_symlink(const char *target, const char *linkpath)
 {
-    printf("frostbyte_symlink(target=\"%s\", linkpath=\"%s\")\n",
-           target, linkpath);
+    printf("L3: frostbyte_symlink target='%s' linkpath='%s'\n", target, linkpath);
+    
+    uint32_t inum = 0;
+    // 1. Create inode with S_IFLNK
+    int res = inode_create(linkpath, S_IFLNK | 0777, &inum);
+    if (res != 0) return res;
+
+    // 2. Write the target path into the inode's data
+    // (Symlinks store the path string as their "file content")
+    size_t len = strlen(target);
+    ssize_t written = inode_write(inum, target, len, 0);
+    
+    if (written < 0) return (int)written;
     return 0;
-}   
+}
+
+int frostbyte_readlink(const char *path, char *buf, size_t size)
+{
+    printf("L3: frostbyte_readlink path='%s'\n", path);
+    
+    uint32_t inum = inode_find_by_path(path);
+    if ((int)inum < 0) return (int)inum;
+
+    // 1. Read the data (the target path)
+    ssize_t bytes = inode_read(inum, buf, size - 1, 0);
+    if (bytes < 0) return (int)bytes;
+
+    // 2. Null terminate
+    buf[bytes] = '\0';
+    return 0;
+}
 
 int frostbyte_hardlink(const char *oldpath, const char *newpath)
 {
-    printf("frostbyte_hardlink(oldpath=\"%s\", newpath=\"%s\")\n",
-           oldpath, newpath);
-    return 0;
+    printf("L3: frostbyte_hardlink old='%s' new='%s'\n", oldpath, newpath);
+    
+    // 1. Find inode of old file
+    int inum = inode_find_by_path(oldpath);
+    if (inum < 0) return inum;
+
+    // 2. Call inode layer helper
+    return inode_link((uint32_t)inum, newpath);
 }
 

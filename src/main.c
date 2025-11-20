@@ -7,6 +7,8 @@
 #include "fusefile.h"
 #include "fusespecial.h"
 
+#include <sys/statvfs.h>
+
 void* frost_init(struct fuse_conn_info *conn,
                         struct fuse_config *cfg)
 {
@@ -56,8 +58,25 @@ void frost_destroy(void *private_data)
 
 int frost_statfs(const char *path, struct statvfs *stbuf)
 {
-    // will edit the stbuf in place.
-    printf("frost_statfs(path=\"%s\", stbuf=%p)\n", path, (void*)stbuf);
+    (void) path;
+    printf("L3 (FUSE): frost_statfs() called.\n");
+
+    // 1. Initialize the structure to zero
+    memset(stbuf, 0, sizeof(struct statvfs));
+
+    // 2. Fill with basic constants based on your allocator headers
+    stbuf->f_bsize = BYTES_PER_BLOCK;   // Filesystem block size (4096)
+    stbuf->f_frsize = BYTES_PER_BLOCK;  // Fragment size (4096)
+    stbuf->f_blocks = DISK_SIZE_IN_BLOCKS; // Total blocks in FS
+    stbuf->f_bfree = DISK_SIZE_IN_BLOCKS / 2; // Dummy value: Free blocks
+    stbuf->f_bavail = DISK_SIZE_IN_BLOCKS / 2; // Dummy value: Available for non-root
+    
+    stbuf->f_files = MAX_INODES;       // Total inodes
+    stbuf->f_ffree = MAX_INODES / 2;   // Dummy value: Free inodes
+    stbuf->f_favail = MAX_INODES / 2;  // Dummy value: Available inodes
+    
+    stbuf->f_namemax = MAX_FILENAME_LEN; // Max filename length
+
     return 0;
 }
 
