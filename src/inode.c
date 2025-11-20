@@ -2207,7 +2207,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
     uint32_t old_offset = 4; // skip size header
     uint32_t new_offset = 4;
     uint32_t total_data_size = *((uint32_t*)buffer);
-    int found = 0;
+    // int found = 0;
 
     // Copy existing entries, skipping if we match key
     while (old_offset < total_data_size + 4 && old_offset < BYTES_PER_BLOCK) {
@@ -2217,7 +2217,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
         uint32_t entry_size = 1 + key_len + 4 + val_len;
 
         if (strncmp(curr_key, key, key_len) == 0 && strlen(key) == key_len) {
-            found = 1;
+            // found = 1;
             // Skip this entry (we will append new version later)
         } else {
             // Keep this entry
