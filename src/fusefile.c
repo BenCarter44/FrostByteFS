@@ -213,7 +213,7 @@ int frostbyte_rename(const char* path_old, const char* path_new, unsigned int fl
     
     printf("frostbyte_rename(old=\"%s\", new=\"%s\", flags=%u)\n",
         path_old, path_new, flags);
-    return inode_rename(inode, path_new);
+    return inode_rename(path_old, path_new);
 
     // return 0;
 }

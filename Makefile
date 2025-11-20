@@ -8,7 +8,7 @@ CC = gcc
 # -Wall: Enable all warnings
 # -Iheader: Look in 'header' directory for .h files
 # `pkg-config...`: Get all FUSE flags and libraries
-CFLAGS = -Wall -Iinclude `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64
+CFLAGS = -Wall -Iinclude `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64 -lpthread
 
 # Source files
 SRCS = src/*.c
@@ -22,7 +22,7 @@ all: $(TARGET)
 
 # Rule to build the executable
 # Compiles and links all source files in one step
-$(TARGET): src/main.c
+$(TARGET): $(SRCS)
 	@echo "Compiling and linking $(TARGET)..."
 	$(CC) -o $(TARGET) $(SRCS) $(CFLAGS)
 	@echo "$(TARGET) build complete."
@@ -34,4 +34,3 @@ clean:
 	rm -f $(TARGET)
 	@echo "Clean complete."
 
-	

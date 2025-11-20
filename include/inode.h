@@ -91,7 +91,8 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node);
 // New helpers to be implemented ..... 
 int return_root_inode(); // done, just returns 0
 
-int inode_rename(uint32_t inode, const char *to);
+// int inode_rename(uint32_t inode, const char *to);
+int inode_remane(const char *from, const char *to);
 int inode_chown(uint32_t inode, uid_t user, gid_t group);
 int inode_chmod(uint32_t inode, mode_t fmode);
 
