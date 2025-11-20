@@ -2,6 +2,10 @@
  * Layer 2: inode management with CoW pointer-tree, directories,
  * and indirect addressing (direct / single / double / triple).
  *
+ * todo: 
+ *  allocator lock
+ *  lock on inode bitmap block (atomic update on inode bitmap)
+ *  handle extended attributes overflow (instead padding use inline or pointer address as inode fields)
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -2231,6 +2235,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
     uint32_t vlen = (uint32_t)len;
     uint32_t new_entry_size = 1 + klen + 4 + vlen;
 
+    // todo: ?? think about extending into multiple block
     if (new_offset + new_entry_size > BYTES_PER_BLOCK) {
         free(buffer); free(new_buf); inode_unlock(inode); return -ENOSPC;
     }
