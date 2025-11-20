@@ -1,32 +1,7 @@
-/*
- * inode.c -- Layer 2: inode management with CoW pointer-tree, directories,
- * and robust indirect addressing (direct / single / double / triple).
+/* 
+ * Layer 2: inode management with CoW pointer-tree, directories,
+ * and indirect addressing (direct / single / double / triple).
  *
- * Assumptions: allocator.h provides:
- *   - int read_data_block(uint8_t *buf, uint32_t blocknum);
- *   - int write_to_next_free_block(const uint8_t *buf, uint32_t *out_blocknum);
- *   - int free_data_block(uint32_t blocknum);
- *   - int read_inode_block(uint8_t *buf, uint32_t blocknum);
- *   - int write_inode_block(const uint8_t *buf, uint32_t blocknum);
- *
- * Constants from headers:
- *   - BYTES_PER_BLOCK
- *   - POINTERS_PER_BLOCK (BYTES_PER_BLOCK / sizeof(uint32_t))
- *   - NUM_DIRECT_BLOCKS
- *   - INODES_PER_BLOCK
- *   - INODE_TABLE_START_BLOCK
- *   - INODE_BITMAP_BLOCKS
- *   - MAX_FILENAME_LEN
- *
- * The on-disk inode struct is expected in "inode.h". This file manipulates
- * struct inode (in-memory copy) and directory_entry layout consistent with
- * BYTES_PER_BLOCK boundaries.
- *
- * Notes:
- *  - This file uses per-inode pthread mutexes. Call inode_global_init(max_inodes)
- *    at mount time to initialize locks. (inode_init_root_if_needed will call it
- *    if necessary.)
- *  - All public functions return negative errno codes on error.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -121,6 +96,7 @@ static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
 
 static int inode_truncate_recursive(uint32_t blocknum, uint32_t level, uint64_t *blocks_to_free, uint8_t *scratch);
 
+
 /* -------------------------
  * Basic inode read/write
  * ------------------------- */
@@ -176,6 +152,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
 
     return rc;
 }
+
 
 /* -------------------------
  * Inode bitmap allocation
@@ -522,6 +499,7 @@ int inode_set_block_num(uint32_t inum, struct inode *node,
     free(scratch);
     return -INODE_OUT_OF_SUPPORTED_SIZE; // file too big
 }
+
 
 /* -------------------------
  * Truncate helpers
@@ -993,6 +971,8 @@ int inode_truncate(uint32_t inum, off_t newsize) {
 
     return 0;
 }
+
+
 
 /* -------------------------
  * File read / write
@@ -1630,26 +1610,41 @@ int inode_unlink(const char *path) {
 int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
     
     // There is a compiler error here. 
-    /*
+    
     struct inode node;
     inode_read_from_disk(dir_inum, &node);
-    if (!S_ISDIR(node.mode)) return -ENOTDIR;
+
+    if (!S_ISDIR(node.mode)) {
+        return -ENOTDIR;
+    }
 
     uint8_t *scratch = malloc(BYTES_PER_BLOCK);
 
-    if (!scratch) return -ENOMEM;
+    if (!scratch) {
+        return -ENOMEM;
+    }
 
     uint32_t per = dir_entries_per_block();
     uint64_t total_blocks = (node.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
+
     for (uint64_t b = 0; b < total_blocks; ++b) {
         uint32_t phy = inode_get_block_num(&node, b, scratch);
+
         if (phy == 0) continue;
-        if (read_data_block(scratch, phy) != 0) { free(scratch); return -EIO; }
+
+        if (read_data_block(scratch, phy) != 0) { 
+            free(scratch); 
+
+            return -EIO; 
+        }
+
         directory_entry *ents = (directory_entry*)scratch;
+
         for (uint32_t i = 0; i < per; ++i) {
             if (ents[i].inum != 0) {
                 if ((*filler)(buf, ents[i].name, NULL, 0)) {
                     free(scratch);
+
                     return 0;
                 }
             }
@@ -1657,7 +1652,7 @@ int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
     }
 
     free(scratch);
-    */
+
     return 0;
 }
 
@@ -1666,12 +1661,21 @@ int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
  * Returns inum >= 0 on success or negative error.
  */
 int inode_find_by_path(const char *path) {
-    if (!path || path[0] != '/') return -EINVAL;
-    if (strcmp(path, "/") == 0) return 0; // root
+    if (!path || path[0] != '/') {
+        return -EINVAL;
+    }
+
+    if (strcmp(path, "/") == 0) {
+        return 0; // root
+    }
 
     // duplicate path for strtok
     char *dup = strdup(path);
-    if (!dup) return -ENOMEM;
+
+    if (!dup) {
+        return -ENOMEM;
+    }
+
     char *saveptr = NULL;
     char *token = strtok_r(dup, "/", &saveptr);
     int cur_inum = 0;
@@ -1679,14 +1683,25 @@ int inode_find_by_path(const char *path) {
     while (token) {
         struct inode node;
         inode_read_from_disk((uint32_t)cur_inum, &node);
-        if (!S_ISDIR(node.mode)) { free(dup); return -ENOTDIR; }
+
+        if (!S_ISDIR(node.mode)) { 
+            free(dup); 
+            return -ENOTDIR; 
+        }
+
         int next = inode_find_dirent((uint32_t)cur_inum, token);
-        if (next < 0) { free(dup); return -ENOENT; }
+
+        if (next < 0) { 
+            free(dup); 
+            return -ENOENT; 
+        }
+
         cur_inum = next;
         token = strtok_r(NULL, "/", &saveptr);
     }
 
     free(dup);
+    
     return cur_inum;
 }
 
