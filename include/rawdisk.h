@@ -34,7 +34,7 @@
 int create_buffer(void** buffer);
 int free_buffer(void* buffer);
 
-int open_disk(char* disk_name);
+int open_disk(const char* disk_name);
 int close_disk();
 
 int read_block_raw(uint8_t* buffer, uint32_t block_number);

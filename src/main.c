@@ -16,13 +16,15 @@ void* frost_init(struct fuse_conn_info *conn,
     cfg->kernel_cache = 1;
 
     // Get the disk path string from fuse_main's private_data
-    char *disk_path = (char*) fuse_get_context()->private_data;
+    const char *disk_path = "/dev/vdb"; // (char*) fuse_get_context()->private_data;
 
     printf("L3 (FUSE): frost_init() called.\n");
     printf("L3 (FUSE): Opening disk: %s\n", disk_path);
 
     // --- 1. Open the disk (L1) ---
-    if (open_disk(disk_path) != 0) {
+    int result = open_disk(disk_path);
+    if (result != 0) {
+        fprintf(stderr, "Error: %s \n",raw_disk_error_to_string(result));
         fprintf(stderr, "FATAL: Failed to open disk image: %s\n", disk_path);
         exit(1); // Cannot continue if disk won't open
     }
@@ -154,8 +156,7 @@ int main(int argc, char *argv[])
 {
     int ret;
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-    fuse_opt_add_arg(&args, "-o");
-    fuse_opt_add_arg(&args, "default_permissions");
+
    
     /* Set defaults -- we have to use strdup so that
        fuse_opt_parse can free the defaults if other
@@ -166,6 +167,9 @@ int main(int argc, char *argv[])
     /* Parse options */
     if (fuse_opt_parse(&args, &options, option_spec, NULL) == -1)
         return 1;
+
+    fuse_opt_add_arg(&args, "-o");
+    fuse_opt_add_arg(&args, "default_permissions");
 
     /* When --help is specified, first print our own file-system
        specific help text, then signal fuse_main to show

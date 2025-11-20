@@ -23,7 +23,7 @@ int free_buffer(void* buffer)
 }
 
 
-int open_disk(char* path)
+int open_disk(const char* path)
 {
 #ifndef USE_KERNEL_CACHE
     int fd = open(path, O_RDWR | O_DIRECT);
