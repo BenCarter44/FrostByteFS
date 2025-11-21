@@ -102,12 +102,24 @@ static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
 
 static int inode_truncate_recursive(uint32_t blocknum, uint32_t level, uint64_t *blocks_to_free, uint8_t *scratch);
 
+static int inode_read_from_disk_private(uint32_t inum, struct inode *out);
+static int inode_write_to_disk_private(uint32_t inum, const struct inode *node);
+static ssize_t inode_read_private(uint32_t inum, void *buf, size_t size, off_t offset);
+static ssize_t inode_write_private(uint32_t inum, const void *buf, size_t size, off_t offset);
 
 /* -------------------------
  * Basic inode read/write
  * ------------------------- */
 
-int inode_read_from_disk(uint32_t inum, struct inode *out) {
+int inode_read_from_disk(uint32_t inum, struct inode *out)
+{
+    inode_lock(inum);
+    int r = inode_read_from_disk_private(inum, out);
+    inode_unlock(inum);
+    return r;
+}
+
+static int inode_read_from_disk_private(uint32_t inum, struct inode *out) {
     uint32_t block_num = INODE_TABLE_START_BLOCK + (inum / INODES_PER_BLOCK);
     uint32_t idx = inum % INODES_PER_BLOCK;
 
@@ -133,8 +145,16 @@ int inode_read_from_disk(uint32_t inum, struct inode *out) {
     return 0;
 }
 
+int inode_write_to_disk(uint32_t inum, const struct inode *node)
+{
+    inode_lock(inum);
+    int r = inode_write_to_disk_private(inum, node);
+    inode_unlock(inum);
+    return r;
+}
 
-int inode_write_to_disk(uint32_t inum, const struct inode *node) {
+
+static int inode_write_to_disk_private(uint32_t inum, const struct inode *node) {
     uint32_t block_num = INODE_TABLE_START_BLOCK + (inum / INODES_PER_BLOCK);
     uint32_t idx = inum % INODES_PER_BLOCK;
 
@@ -209,7 +229,7 @@ int inode_alloc(uint32_t *out_inum) {
                     *out_inum = bit_index;
                     // zero the inode struct on disk
                     struct inode empty = {0};
-                    inode_write_to_disk(*out_inum, &empty);
+                    inode_write_to_disk_private(*out_inum, &empty);
                     free(bytes);
 
                     return 0;
@@ -246,7 +266,7 @@ int inode_free(uint32_t inum) {
     }
 
     buf[byte_idx] &= ~(1u << bit_in_byte);
-
+    // TODO: Need to call free_data_block() for all data blocks!
     ret = write_inode_block(buf, b);
 
     if (ret != 0) { 
@@ -590,19 +610,21 @@ int inode_truncate(uint32_t inum, off_t newsize) {
 
     inode_lock(inum);
     struct inode node;
-    inode_read_from_disk(inum, &node);
+    inode_read_from_disk_private(inum, &node);
 
     uint64_t oldsize = node.size;
 
     if ((off_t)oldsize == newsize) { 
-        inode_unlock(inum); return 0; 
+        inode_unlock(inum); 
+        return 0; 
     }
 
     uint8_t *scratch;
     create_buffer((void**)&scratch);
 
     if (!scratch) { 
-        inode_unlock(inum); return -INODE_BUFFER_ALLOCATION_FAILED; 
+        inode_unlock(inum); 
+        return -INODE_BUFFER_ALLOCATION_FAILED; 
     }
 
     if (newsize > oldsize) {
@@ -610,7 +632,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
         // We choose not to pre-allocate blocks for holes; writes will allocate.
         node.size = newsize;
         node.mtime = node.ctime = time(NULL);
-        inode_write_to_disk(inum, &node);
+        inode_write_to_disk_private(inum, &node);
         free(scratch);
         inode_unlock(inum);
 
@@ -682,7 +704,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
             node.size = newsize;
             node.mtime = node.ctime = time(NULL);
 
-            inode_write_to_disk(inum, &node);
+            inode_write_to_disk_private(inum, &node);
             free(scratch);
             inode_unlock(inum);
 
@@ -981,7 +1003,7 @@ int inode_truncate(uint32_t inum, off_t newsize) {
     // update size & timestamps
     node.size = newsize;
     node.mtime = node.ctime = time(NULL);
-    inode_write_to_disk(inum, &node);
+    inode_write_to_disk_private(inum, &node);
 
     free(scratch);
     inode_unlock(inum);
@@ -995,13 +1017,21 @@ int inode_truncate(uint32_t inum, off_t newsize) {
  * File read / write
  * ------------------------- */
 
-ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
+ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset)
+{
+    inode_lock(inum);
+    ssize_t r = inode_read_private(inum, buf, size, offset);
+    inode_unlock(inum);
+    return r;
+}
+
+static ssize_t inode_read_private(uint32_t inum, void *buf, size_t size, off_t offset) {
     if (size == 0) return 0;
 
     if (offset < 0) return -EINVAL;
 
     struct inode node;
-    inode_read_from_disk(inum, &node);
+    inode_read_from_disk_private(inum, &node);
 
     uint64_t file_size = node.size;
 
@@ -1056,7 +1086,7 @@ ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
 
     // todo: comment this to make read faster??
     node.atime = time(NULL);
-    inode_write_to_disk(inum, &node);
+    inode_write_to_disk_private(inum, &node);
 
     free(scratch);
 
@@ -1071,13 +1101,24 @@ ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
  *   blocks CoW style), then free the old data block.
  */
 ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
-    if (size == 0) return 0;
+    inode_lock(inum);
+    ssize_t r = inode_write_private(inum, buf, size, offset);
+    inode_unlock(inum);
+    return r;
+}
 
-    if (offset < 0) return -EINVAL;
+static ssize_t inode_write_private(uint32_t inum, const void *buf, size_t size, off_t offset) {
+    if (size == 0) {
+        return 0;
+    }
+
+    if (offset < 0) {
+        return -EINVAL;
+    }
 
     struct inode node;
 
-    inode_read_from_disk(inum, &node);
+    inode_read_from_disk_private(inum, &node);
 
     uint8_t *scratch;
     create_buffer((void**)&scratch);
@@ -1121,7 +1162,6 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
 
         if (write_to_next_free_block(scratch, &new_phy) != 0) {
             free(scratch);
-
             return -EIO;
         }
 
@@ -1158,10 +1198,9 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
     }
 
     node.mtime = node.ctime = time(NULL);
-    inode_write_to_disk(inum, &node);
+    inode_write_to_disk_private(inum, &node);
 
     free(scratch);
-
     return (ssize_t)written;
 }
 
@@ -1181,17 +1220,15 @@ int inode_find_dirent(uint32_t dir_inum, const char *name) {
     
     // Just read the directory as a standard file.
     struct inode node;
-    inode_lock(dir_inum);
-    inode_read_from_disk(dir_inum, &node);
+    inode_read_from_disk_private(dir_inum, &node);
 
     if (!S_ISDIR(node.mode)) {
-        inode_unlock(dir_inum);
         return -ENOTDIR;
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size); 
     memset(scratch,0,node.size);
-    inode_read(dir_inum, scratch, node.size, 0);
+    inode_read_private(dir_inum, scratch, node.size, 0);
     directory_entry* list = (directory_entry*)scratch;
 
     uint64_t index = 0;
@@ -1200,13 +1237,11 @@ int inode_find_dirent(uint32_t dir_inum, const char *name) {
         if(list[index].inum != 0 && strncmp(list[index].name, name, MAX_FILENAME_LEN) == 0)
         {
             // match!
-            inode_unlock(dir_inum);
             free(scratch);
             return (int)list[index].inum;
         }
         index++;
     }
-    inode_unlock(dir_inum);
     free(scratch);
     return -ENOENT;
 }
@@ -1227,17 +1262,15 @@ int inode_add_dirent(uint32_t parent_inum, directory_entry* entry) {
     
     // Just read the directory as a standard file. Add to it. 
     struct inode node;
-    inode_lock(parent_inum);
-    inode_read_from_disk(parent_inum, &node);
+    inode_read_from_disk_private(parent_inum, &node);
 
     if (!S_ISDIR(node.mode)) {
-        inode_unlock(parent_inum);
         return -ENOTDIR;
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size + 2 * sizeof(directory_entry)); 
     memset(scratch,0,node.size + 2 * sizeof(directory_entry));
-    inode_read(parent_inum, scratch, node.size, 0);
+    inode_read_private(parent_inum, scratch, node.size, 0);
 
     directory_entry* list = (directory_entry*)scratch;
 
@@ -1255,10 +1288,9 @@ int inode_add_dirent(uint32_t parent_inum, directory_entry* entry) {
     list[index].is_valid = 0;
     index++;
     inode_truncate(parent_inum, 0);
-    inode_write(parent_inum, (void*)list, index * sizeof(directory_entry), 0);
+    inode_write_private(parent_inum, (void*)list, index * sizeof(directory_entry), 0);
     
     free(scratch);
-    inode_unlock(parent_inum);  
     return 0;
 }
 
@@ -1278,17 +1310,15 @@ int inode_remove_dirent(uint32_t parent_inum, directory_entry* entry) {
     
     // Just read the directory as a standard file. Remove to it. 
     struct inode node;
-    inode_lock(parent_inum);
-    inode_read_from_disk(parent_inum, &node);
+    inode_read_from_disk_private(parent_inum, &node);
 
     if (!S_ISDIR(node.mode)) {
-        inode_unlock(parent_inum);
         return -ENOTDIR;
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size + 2 * sizeof(directory_entry)); 
     memset(scratch,0,node.size + 2 * sizeof(directory_entry));
-    inode_read(parent_inum, scratch, node.size, 0);
+    inode_read_private(parent_inum, scratch, node.size, 0);
 
     directory_entry* list = (directory_entry*)scratch;
     directory_entry* new_list = (directory_entry*)malloc(node.size + 2 * sizeof(directory_entry));
@@ -1316,10 +1346,9 @@ int inode_remove_dirent(uint32_t parent_inum, directory_entry* entry) {
     new_list[new_list_index].is_valid = 0;
     new_list_index++;
     inode_truncate(parent_inum, 0);
-    inode_write(parent_inum, (void*)new_list, new_list_index * sizeof(directory_entry), 0);
+    inode_write_private(parent_inum, (void*)new_list, new_list_index * sizeof(directory_entry), 0);
     
     free(scratch);
-    inode_unlock(parent_inum);  
     return -ENOENT;
 }
 
@@ -1353,11 +1382,13 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         return parent_inum; 
     }
 
+    inode_lock(parent_inum);
     // Ensure parent is directory
     struct inode parent;
-    inode_read_from_disk((uint32_t)parent_inum, &parent);
+    inode_read_from_disk_private((uint32_t)parent_inum, &parent);
 
     if (!S_ISDIR(parent.mode)) { 
+        inode_unlock(parent_inum);
         free(pathdup); 
         return -ENOTDIR; 
     }
@@ -1367,6 +1398,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
 
     if (exists >= 0) { 
         free(pathdup); 
+        inode_unlock(parent_inum);
         return -EEXIST; 
     }
 
@@ -1388,10 +1420,11 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
     node.atime = node.mtime = node.ctime = time(NULL);
 
     // write inode
-    if (inode_write_to_disk(new_inum, &node) != 0)
+    if (inode_write_to_disk_private(new_inum, &node) != 0)
     {
         inode_free(new_inum);
         free(pathdup);
+        inode_unlock(parent_inum);
         return -EIO;
     }
 
@@ -1404,7 +1437,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         if (!scratch) { 
             inode_free(new_inum); 
             free(pathdup); 
-            
+            inode_unlock(parent_inum);
             return -ENOMEM; 
         }
 
@@ -1423,22 +1456,22 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
             free(scratch); 
             inode_free(new_inum); 
             free(pathdup); 
-            
+            inode_unlock(parent_inum);
             return -EIO;
         }
 
         // set as direct block 0
         inode_lock(new_inum);
-        inode_read_from_disk(new_inum, &node);
+        inode_read_from_disk_private(new_inum, &node);
         node.direct_blocks[0] = blocknum;
         node.size = BYTES_PER_BLOCK;
-        inode_write_to_disk(new_inum, &node);
+        inode_write_to_disk_private(new_inum, &node);
         inode_unlock(new_inum);
         free(scratch);
 
         // increment parent link count
         parent.nlink++;
-        inode_write_to_disk(parent_inum, &parent);
+        inode_write_to_disk_private(parent_inum, &parent);
     }
 
     // add dirent to parent
@@ -1449,12 +1482,13 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         // cleanup: remove inode and its blocks
         inode_free(new_inum);
         free(pathdup);
-
+        inode_unlock(parent_inum);
         return -EIO;
     }
 
     *out_inum = new_inum;
     free(pathdup);
+    inode_unlock(parent_inum);
     return 0;
 }
 
@@ -1474,12 +1508,14 @@ int inode_unlink(const char *path) {
     int target = inode_find_dirent((uint32_t)parent, basepart);
     if (target < 0) { free(dup); return -ENOENT; }
 
+    inode_lock(parent);
+
     directory_entry entry_of_file;
     entry_of_file.inum = target;
     entry_of_file.name = basepart;
 
     struct inode node;
-    inode_read_from_disk((uint32_t)target, &node);
+    inode_read_from_disk_private((uint32_t)target, &node);
     if (S_ISDIR(node.mode)) { free(dup); return -EISDIR; }
 
     // Remove from parent dir
@@ -1487,11 +1523,15 @@ int inode_unlink(const char *path) {
 
     // Decrement link and possibly free inode
     inode_lock((uint32_t)target);
-    inode_read_from_disk((uint32_t)target, &node);
-    if (node.nlink > 0) node.nlink--;
+    inode_read_from_disk_private((uint32_t)target, &node);
+    if (node.nlink > 0) 
+    {
+        node.nlink--;
+    }
     if (node.nlink > 0) {
-        inode_write_to_disk((uint32_t)target, &node);
+        inode_write_to_disk_private((uint32_t)target, &node);
         inode_unlock((uint32_t)target);
+        inode_unlock(parent);
         free(dup);
         return 0;
     }
@@ -1530,11 +1570,12 @@ int inode_unlink(const char *path) {
         total_blocks = (total_blocks > blocks_sub) ? (total_blocks - blocks_sub) : 0;
     }
 
-    inode_write_to_disk((uint32_t)target, &node);
+    inode_write_to_disk_private((uint32_t)target, &node);
     inode_unlock((uint32_t)target);
 
     inode_free((uint32_t)target);
     free(dup);
+    inode_unlock(parent);
     return 0;
 }
 
@@ -1552,7 +1593,7 @@ int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
     
     struct inode node;
     inode_lock(dir_inum);
-    inode_read_from_disk(dir_inum, &node);
+    inode_read_from_disk_private(dir_inum, &node);
 
     if (!S_ISDIR(node.mode)) {
         inode_unlock(dir_inum);
@@ -1561,7 +1602,7 @@ int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
 
     uint8_t *scratch = (uint8_t*)malloc(node.size); 
     memset(scratch,0,node.size);
-    inode_read(dir_inum, scratch, node.size, 0);
+    inode_read_private(dir_inum, scratch, node.size, 0);
     directory_entry* list = (directory_entry*)scratch;
 
     uint64_t index = 0;
@@ -1607,14 +1648,15 @@ int inode_find_by_path(const char *path) {
 
     while (token) {
         struct inode node;
-        inode_read_from_disk((uint32_t)cur_inum, &node);
+        inode_read_from_disk_private((uint32_t)cur_inum, &node);
 
         if (!S_ISDIR(node.mode)) { 
             free(dup); 
             return -ENOTDIR; 
         }
-
+        inode_lock(cur_inum);
         int next = inode_find_dirent((uint32_t)cur_inum, token);
+        inode_unlock(cur_inum);
 
         if (next < 0) { 
             free(dup); 
@@ -1728,7 +1770,7 @@ int format_inodes() {
 
     // write inode
     root.direct_blocks[0] = datablock_number;
-    inode_write_to_disk(0, &root);
+    inode_write_to_disk_private(0, &root);
     free(scratch);
     free(buf);
     return 0;
@@ -1744,7 +1786,7 @@ int inode_chown(uint32_t inode, uid_t user, gid_t group) {
     
     struct inode node;
 
-    if (inode_read_from_disk(inode, &node) != 0) {
+    if (inode_read_from_disk_private(inode, &node) != 0) {
         inode_unlock(inode);
         return -EIO;
     }
@@ -1755,7 +1797,7 @@ int inode_chown(uint32_t inode, uid_t user, gid_t group) {
 
     node.ctime = time(NULL);
 
-    int ret = inode_write_to_disk(inode, &node);
+    int ret = inode_write_to_disk_private(inode, &node);
     inode_unlock(inode);
 
     return ret;
@@ -1766,7 +1808,7 @@ int inode_chmod(uint32_t inode, mode_t fmode) {
     
     struct inode node;
 
-    if (inode_read_from_disk(inode, &node) != 0) {
+    if (inode_read_from_disk_private(inode, &node) != 0) {
         inode_unlock(inode);
 
         return -EIO;
@@ -1777,7 +1819,7 @@ int inode_chmod(uint32_t inode, mode_t fmode) {
     node.mode = (node.mode & S_IFMT) | (fmode & ~S_IFMT);
     node.ctime = time(NULL);
 
-    int ret = inode_write_to_disk(inode, &node);
+    int ret = inode_write_to_disk_private(inode, &node);
     inode_unlock(inode);
 
     return ret;
@@ -1792,18 +1834,16 @@ static int is_dir_empty(uint32_t dir_inum) {
 
     // Just read the directory as a standard file. Add to it. 
     struct inode node;
-    inode_lock(dir_inum);
-    inode_read_from_disk(dir_inum, &node);
+    inode_read_from_disk_private(dir_inum, &node);
 
     if (!S_ISDIR(node.mode)) {
-        inode_unlock(dir_inum);
         return -ENOTDIR;
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size + 2 * sizeof(directory_entry)); 
     memset(scratch,0,node.size + 2 * sizeof(directory_entry));
 
-    inode_read(dir_inum, scratch, node.size, 0);
+    inode_read_private(dir_inum, scratch, node.size, 0);
 
     directory_entry* list = (directory_entry*)scratch;
 
@@ -1815,12 +1855,10 @@ static int is_dir_empty(uint32_t dir_inum) {
             strncmp(list[index].name,"..",3) != 0 )
         {
             // something else!
-            inode_unlock(dir_inum);
             free(scratch);
             return 0;
         }
     }
-    inode_unlock(dir_inum);
     free(scratch);
     return 1; // Empty
 }
@@ -1837,21 +1875,40 @@ int inode_rmdir(const char *path) {
     if (parent_inum < 0) { free(dup); return parent_inum; }
 
     // Check if target exists in parent
+    inode_lock(parent_inum);
     int target_inum = inode_find_dirent((uint32_t)parent_inum, basepart);
-    if (target_inum < 0) { free(dup); return -ENOENT; }
+    
+    if (target_inum < 0) { 
+        inode_unlock(parent_inum);
+        free(dup);
+        return -ENOENT;
+    }
 
+    inode_lock(target_inum);
     struct inode target_node;
-    inode_read_from_disk((uint32_t)target_inum, &target_node);
+    inode_read_from_disk_private((uint32_t)target_inum, &target_node);
 
     if (!S_ISDIR(target_node.mode)) {
+        inode_unlock(target_inum);
+        inode_unlock(parent_inum);
         free(dup);
         return -ENOTDIR;
     }
 
     // Check if empty
     int empty = is_dir_empty((uint32_t)target_inum);
-    if (empty < 0) { free(dup); return empty; } // Error checking
-    if (empty == 0) { free(dup); return -ENOTEMPTY; }
+    if (empty < 0) { 
+        inode_unlock(target_inum);
+        inode_unlock(parent_inum);
+        free(dup);
+        return empty;
+    } // Error checking
+    if (empty == 0) {
+        inode_unlock(target_inum);
+        inode_unlock(parent_inum);
+        free(dup);
+        return -ENOTEMPTY;
+    }
 
     // Remove from parent
     directory_entry dent;
@@ -1859,15 +1916,22 @@ int inode_rmdir(const char *path) {
     dent.name = basepart;
 
     int ret = inode_remove_dirent((uint32_t)parent_inum, &dent);
-    if (ret != 0) { free(dup); return ret; }
+    if (ret != 0) {         
+        inode_unlock(target_inum);
+        inode_unlock(parent_inum);
+        free(dup);
+        return ret;
+    }
 
     // Decrement parent nlink (removing ".." from child)
     inode_lock((uint32_t)parent_inum);
     struct inode parent_node;
-    inode_read_from_disk((uint32_t)parent_inum, &parent_node);
-    if (parent_node.nlink > 2) parent_node.nlink--;
-    inode_write_to_disk((uint32_t)parent_inum, &parent_node);
-    inode_unlock((uint32_t)parent_inum);
+    inode_read_from_disk_private((uint32_t)parent_inum, &parent_node);
+    if (parent_node.nlink > 2)
+    {
+        parent_node.nlink--;
+    }
+    inode_write_to_disk_private((uint32_t)parent_inum, &parent_node);
 
     // Free target inode and blocks
     // Recycled logic from inode_unlink cleanup
@@ -1885,6 +1949,8 @@ int inode_rmdir(const char *path) {
     inode_free((uint32_t)target_inum);
 
     free(dup);
+    inode_unlock(target_inum);
+    inode_unlock(parent_inum);
     return 0;
 }
 
@@ -1954,11 +2020,16 @@ int inode_rename(const char *from, const char *to) {
         goto cleanup; 
     }
 
+    inode_lock(from_parent_inum);
+    inode_lock(to_parent_inum);
+
     // 5. Find Source Inode
     int target_inum = inode_find_dirent((uint32_t)from_parent_inum, from_base);
 
     if (target_inum < 0) { 
         ret = -ENOENT; 
+        inode_unlock(to_parent_inum);
+        inode_unlock(from_parent_inum);
         goto cleanup; 
     }
 
@@ -1970,8 +2041,13 @@ int inode_rename(const char *from, const char *to) {
     // complex transaction rollback logic.
     if (dest_exists >= 0) {
         ret = -EEXIST;
+        inode_unlock(to_parent_inum);
+        inode_unlock(from_parent_inum);
         goto cleanup;
     }
+
+    inode_lock(target_inum);
+    inode_lock(dest_exists);
 
     // 7. Add Link to New Parent
     directory_entry new_val;
@@ -1980,8 +2056,14 @@ int inode_rename(const char *from, const char *to) {
 
     ret = inode_add_dirent((uint32_t)to_parent_inum, &new_val);
 
-    if (ret != 0) goto cleanup;
-
+    if (ret != 0)
+    {
+        inode_unlock(dest_exists);
+        inode_unlock(target_inum);
+        inode_unlock(to_parent_inum);
+        inode_unlock(from_parent_inum);
+        goto cleanup;
+    }
     // 8. Remove Link from Old Parent
     directory_entry old_val;
     old_val.inum = target_inum;
@@ -1993,14 +2075,22 @@ int inode_rename(const char *from, const char *to) {
         // Ideally, we should try to undo the add_dirent here.
         // For this implementation, we return the error.
         // todo: ??
+        inode_unlock(dest_exists);
+        inode_unlock(target_inum);
+        inode_unlock(to_parent_inum);
+        inode_unlock(from_parent_inum);
         goto cleanup;
     }
 
     // 9. Handle Directory Specific Updates (The Fix)
     struct inode target_node;
 
-    if (inode_read_from_disk((uint32_t)target_inum, &target_node) != 0) {
+    if (inode_read_from_disk_private((uint32_t)target_inum, &target_node) != 0) {
         ret = -EIO; 
+        inode_unlock(dest_exists);
+        inode_unlock(target_inum);
+        inode_unlock(to_parent_inum);
+        inode_unlock(from_parent_inum);
         goto cleanup;
     }
 
@@ -2010,28 +2100,28 @@ int inode_rename(const char *from, const char *to) {
             
             // A. Update Parent Link Counts
             // Old parent loses a link (the ".." from the child is gone)
-            inode_lock((uint32_t)from_parent_inum);
+            // inode_lock((uint32_t)from_parent_inum);
 
             struct inode from_p_node;
-            inode_read_from_disk((uint32_t)from_parent_inum, &from_p_node);
+            inode_read_from_disk_private((uint32_t)from_parent_inum, &from_p_node);
 
             if (from_p_node.nlink > 2) {
                 from_p_node.nlink--;
             }
 
-            inode_write_to_disk((uint32_t)from_parent_inum, &from_p_node);
+            inode_write_to_disk_private((uint32_t)from_parent_inum, &from_p_node);
 
-            inode_unlock((uint32_t)from_parent_inum);
+            // inode_unlock((uint32_t)from_parent_inum);
 
             // New parent gains a link
-            inode_lock((uint32_t)to_parent_inum);
+            // inode_lock((uint32_t)to_parent_inum);
 
             struct inode to_p_node;
-            inode_read_from_disk((uint32_t)to_parent_inum, &to_p_node);
+            inode_read_from_disk_private((uint32_t)to_parent_inum, &to_p_node);
             to_p_node.nlink++;
-            inode_write_to_disk((uint32_t)to_parent_inum, &to_p_node);
+            inode_write_to_disk_private((uint32_t)to_parent_inum, &to_p_node);
 
-            inode_unlock((uint32_t)to_parent_inum);
+            // inode_unlock((uint32_t)to_parent_inum);
 
             // B. Update the ".." entry inside the target directory
             create_buffer((void**)&scratch);
@@ -2039,6 +2129,10 @@ int inode_rename(const char *from, const char *to) {
 
             if (!scratch) { 
                 ret = -ENOMEM; 
+                inode_unlock(dest_exists);
+                inode_unlock(target_inum);
+                inode_unlock(to_parent_inum);
+                inode_unlock(from_parent_inum);
                 goto cleanup; 
             }
 
@@ -2049,6 +2143,10 @@ int inode_rename(const char *from, const char *to) {
                 // Read the directory data block
                 if (read_data_block(scratch, old_phy_blk) != 0) {
                     ret = -EIO; 
+                    inode_unlock(dest_exists);
+                    inode_unlock(target_inum);
+                    inode_unlock(to_parent_inum);
+                    inode_unlock(from_parent_inum);
                     goto cleanup;
                 }
 
@@ -2069,6 +2167,10 @@ int inode_rename(const char *from, const char *to) {
                     uint32_t new_phy_blk = 0;
                     if (write_to_next_free_block(scratch, &new_phy_blk) != 0) {
                         ret = -EIO; 
+                        inode_unlock(dest_exists);
+                        inode_unlock(target_inum);
+                        inode_unlock(to_parent_inum);
+                        inode_unlock(from_parent_inum);
                         goto cleanup;
                     }
 
@@ -2076,11 +2178,15 @@ int inode_rename(const char *from, const char *to) {
                     if (inode_set_block_num((uint32_t)target_inum, &target_node, 0, new_phy_blk) != 0) {
                         free_data_block(new_phy_blk); // Rollback
                         ret = -EIO; 
+                        inode_unlock(dest_exists);
+                        inode_unlock(target_inum);
+                        inode_unlock(to_parent_inum);
+                        inode_unlock(from_parent_inum);
                         goto cleanup;
                     }
 
                     // Persist the modified inode (which now points to the new block)
-                    inode_write_to_disk((uint32_t)target_inum, &target_node);
+                    inode_write_to_disk_private((uint32_t)target_inum, &target_node);
                     
                     // Note: The old physical block refcount decrement is handled by inode_set_block_num
                     // (assuming your CoW logic there correctly calls free_data_block on the old pointer)
@@ -2088,6 +2194,10 @@ int inode_rename(const char *from, const char *to) {
             }
         }
     }
+    inode_unlock(dest_exists);
+    inode_unlock(target_inum);
+    inode_unlock(to_parent_inum);
+    inode_unlock(from_parent_inum);
 
     ret = 0;
 
@@ -2126,7 +2236,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
 
     inode_lock(inode);
     struct inode node;
-    inode_read_from_disk(inode, &node);
+    inode_read_from_disk_private(inode, &node);
 
     uint32_t blk = get_xattr_block_num(&node);
     uint8_t *buffer;
@@ -2203,7 +2313,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
 
     // Update inode padding
     set_xattr_block_num(&node, new_blk_phy);
-    inode_write_to_disk(inode, &node);
+    inode_write_to_disk_private(inode, &node);
 
     free(buffer);
     free(new_buf);
@@ -2214,7 +2324,7 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
 int inode_getxattr(uint32_t inode, const char* key, const char* val, size_t len) {
     inode_lock(inode);
     struct inode node;
-    inode_read_from_disk(inode, &node);
+    inode_read_from_disk_private(inode, &node);
 
     uint32_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
@@ -2259,7 +2369,7 @@ int inode_getxattr(uint32_t inode, const char* key, const char* val, size_t len)
 int inode_listxattr(uint32_t inode, char* val, size_t len) {
     inode_lock(inode);
     struct inode node;
-    inode_read_from_disk(inode, &node);
+    inode_read_from_disk_private(inode, &node);
 
     uint32_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return 0; }
@@ -2310,7 +2420,7 @@ int inode_listxattr(uint32_t inode, char* val, size_t len) {
 int inode_removexattr(uint32_t inode, const char* key) {
     inode_lock(inode);
     struct inode node;
-    inode_read_from_disk(inode, &node);
+    inode_read_from_disk_private(inode, &node);
 
     uint32_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
@@ -2362,7 +2472,7 @@ int inode_removexattr(uint32_t inode, const char* key) {
 
     free_data_block(blk);
     set_xattr_block_num(&node, new_blk_phy);
-    inode_write_to_disk(inode, &node);
+    inode_write_to_disk_private(inode, &node);
 
     free(buffer);
     free(new_buf);
@@ -2383,10 +2493,10 @@ int inode_link(uint32_t src_inum, const char *newpath) {
     // 2. Increment Link Count on Source
     inode_lock(src_inum);
     struct inode node;
-    inode_read_from_disk(src_inum, &node);
+    inode_read_from_disk_private(src_inum, &node);
     node.nlink++;
     node.ctime = time(NULL);
-    inode_write_to_disk(src_inum, &node);
+    inode_write_to_disk_private(src_inum, &node);
     inode_unlock(src_inum);
 
     // 3. Add directory entry
@@ -2398,9 +2508,9 @@ int inode_link(uint32_t src_inum, const char *newpath) {
     if (res != 0) {
         // Rollback link count if add_dirent fails
         inode_lock(src_inum);
-        inode_read_from_disk(src_inum, &node);
+        inode_read_from_disk_private(src_inum, &node);
         node.nlink--;
-        inode_write_to_disk(src_inum, &node);
+        inode_write_to_disk_private(src_inum, &node);
         inode_unlock(src_inum);
     }
     
