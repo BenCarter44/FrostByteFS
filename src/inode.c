@@ -1190,6 +1190,7 @@ int inode_find_dirent(uint32_t dir_inum, const char *name) {
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size); 
+    memset(scratch,0,node.size);
     inode_read(dir_inum, scratch, node.size, 0);
     directory_entry* list = (directory_entry*)scratch;
 
@@ -1235,6 +1236,7 @@ int inode_add_dirent(uint32_t parent_inum, directory_entry* entry) {
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size + 2 * sizeof(directory_entry)); 
+    memset(scratch,0,node.size + 2 * sizeof(directory_entry));
     inode_read(parent_inum, scratch, node.size, 0);
 
     directory_entry* list = (directory_entry*)scratch;
@@ -1285,10 +1287,13 @@ int inode_remove_dirent(uint32_t parent_inum, directory_entry* entry) {
     }
 
     uint8_t *scratch = (uint8_t*)malloc(node.size + 2 * sizeof(directory_entry)); 
+    memset(scratch,0,node.size + 2 * sizeof(directory_entry));
     inode_read(parent_inum, scratch, node.size, 0);
 
     directory_entry* list = (directory_entry*)scratch;
     directory_entry* new_list = (directory_entry*)malloc(node.size + 2 * sizeof(directory_entry));
+    memset((void*)new_list,0,node.size + 2 * sizeof(directory_entry));
+    
     uint32_t new_list_index = 0;
 
     uint64_t index = 0;
@@ -1700,27 +1705,14 @@ int format_inodes() {
         return -ENOMEM; 
     }
 
-    memset(scratch, 0, BYTES_PER_BLOCK);
-    directory_entry *ents = (directory_entry*)scratch;
 
-    ents[0].inum = 0; 
-    strncpy(ents[0].name, ".", MAX_FILENAME_LEN); 
-    ents[0].name[MAX_FILENAME_LEN] = '\0';
-
-    ents[1].inum = 0; 
-    strncpy(ents[1].name, "..", MAX_FILENAME_LEN); 
-    ents[1].name[MAX_FILENAME_LEN] = '\0';
-
-    uint32_t blocknum = 0;
-
-    if (write_to_next_free_block(scratch, &blocknum) != 0) { 
-        free(scratch); 
-        free(buf); 
-
-        return -EIO; 
-    }
-
-    root.direct_blocks[0] = blocknum;
+    directory_entry root_ent[3];
+    root_ent[0].inum = 0;
+    strncpy(root_ent[0].name, ".", MAX_FILENAME_LEN); 
+    root_ent[1].inum = 0;
+    strncpy(root_ent[1].name, "..", MAX_FILENAME_LEN); 
+    root_ent[2].inum = 0;
+    root_ent[2].is_valid = 0;
 
     // tell allocator that root has been allocated
     uint32_t out_num = 19;
@@ -1731,10 +1723,20 @@ int format_inodes() {
         free(buf);
         return -EIO;        
     }
+    memcpy(scratch, root_ent, sizeof(directory_entry) * 3);
+    uint32_t datablock_number = 0;
+    // write directory_entry into data block
+    if(write_to_next_free_block(scratch, &datablock_number) != 0)
+    {
+        free(scratch); 
+        free(buf); 
+        return -EIO;  
+    }
 
+    // write inode
+    root.direct_blocks[0] = datablock_number;
     inode_write_to_disk(0, &root);
     free(scratch);
-
     free(buf);
     return 0;
 }

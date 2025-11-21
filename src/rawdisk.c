@@ -8,6 +8,7 @@ static int disk_fd = 0;
 int create_buffer(void** buffer)
 {
     int r = posix_memalign(buffer, BYTES_PER_BLOCK, BYTES_PER_BLOCK);
+    memset(*(buffer), 0, BYTES_PER_BLOCK);
     if(r != 0)
     {
         return -RAW_BUFFER_ERROR;
