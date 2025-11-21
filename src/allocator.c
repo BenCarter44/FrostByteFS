@@ -7,7 +7,7 @@
 static int increment_reference(int8_t value, uint32_t reference_number);
 
 static int fetch_data_block(uint8_t* buffer, uint32_t reference_block_number);
-static int write_data_block(uint8_t* buffer, uint32_t reference_block_number);
+static int write_data_block(const uint8_t* buffer, uint32_t reference_block_number);
 
 int increment_reference(int8_t value, uint32_t reference_number)
 {
@@ -50,7 +50,7 @@ int fetch_data_block(uint8_t* buffer, uint32_t reference_block_number)
     return 0;
 }
 
-int write_data_block(uint8_t* buffer, uint32_t reference_block_number)
+int write_data_block(const uint8_t* buffer, uint32_t reference_block_number)
 {
     if(reference_block_number >= DATA_BLOCKS * BYTES_PER_BLOCK)
     {
@@ -79,7 +79,7 @@ int read_inode_block(uint8_t* buffer, uint32_t reference_block_number)
     return 0;
 }
 
-int write_inode_block(uint8_t* buffer, uint32_t reference_block_number)
+int write_inode_block(const uint8_t* buffer, uint32_t reference_block_number)
 {
     if(reference_block_number >= INODE_BLOCKS * BYTES_PER_BLOCK)
     {
@@ -179,7 +179,7 @@ static int search_for_next_free_block(uint32_t* block_number)
 
 // Copy on write.... write to next free block
 // ASSUMES NO INTERRUPTIONS.... ATOMIC!
-int write_to_next_free_block(uint8_t* buffer, uint32_t* block_number)
+int write_to_next_free_block(const uint8_t* buffer, uint32_t* block_number)
 {
     // requires atomic operations!
 
@@ -223,6 +223,7 @@ int format_super_block()
     buffer[BYTES_PER_BLOCK-1] = 0xF5;
     write_block_raw(buffer, SUPER_BLOCK);
     free_buffer(buffer);
+    return 0;
 }
 
 bool allocator_check_valid_super_block()
@@ -286,10 +287,7 @@ int clear_ref_blocks()
     }
     int ret = write_block_raw(buffer, REFERENCE_BASE_BLOCK + REF_BLOCKS - 1 - counter);
     free_buffer(buffer);
-    if(ret < 0)
-    {
-        return ret;
-    }
+    return ret;
 }
 
 int clear_inode_blocks()
@@ -310,4 +308,5 @@ int clear_inode_blocks()
     }
     printf("\n");
     free_buffer(buffer);
+    return 0;
 }

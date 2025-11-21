@@ -1,7 +1,6 @@
 #include "rawdisk.h"
 
 // private variables.
-static int disk_file_descriptor = 0;
 static char* disk_name = NULL;
 static int disk_fd = 0;
 
@@ -9,6 +8,7 @@ static int disk_fd = 0;
 int create_buffer(void** buffer)
 {
     int r = posix_memalign(buffer, BYTES_PER_BLOCK, BYTES_PER_BLOCK);
+    memset(*(buffer), 0, BYTES_PER_BLOCK);
     if(r != 0)
     {
         return -RAW_BUFFER_ERROR;
@@ -18,11 +18,13 @@ int create_buffer(void** buffer)
 
 int free_buffer(void* buffer)
 {
+    if(buffer == NULL) { return -1;}
     free(buffer);
+    return 0;
 }
 
 
-int open_disk(char* path)
+int open_disk(const char* path)
 {
 #ifndef USE_KERNEL_CACHE
     int fd = open(path, O_RDWR | O_DIRECT);
@@ -71,7 +73,7 @@ int read_block_raw(uint8_t* buffer, uint32_t block_number)
     return 0;
 }
 
-int write_block_raw(uint8_t* buffer, uint32_t block_number)
+int write_block_raw(const uint8_t* buffer, uint32_t block_number)
 {
     if(disk_name == NULL)
     {
