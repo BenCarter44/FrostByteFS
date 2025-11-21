@@ -614,15 +614,12 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
     if (newsize < 0) return -EINVAL;
 
     int ret = 0;
-
-    inode_lock(inum);
     struct inode node;
     inode_read_from_disk_private(inum, &node);
 
     uint64_t oldsize = node.size;
 
     if ((off_t)oldsize == newsize) { 
-        inode_unlock(inum); 
         return 0; 
     }
 
@@ -630,7 +627,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
     create_buffer((void**)&scratch);
 
     if (!scratch) { 
-        inode_unlock(inum); 
         return -INODE_BUFFER_ALLOCATION_FAILED; 
     }
 
@@ -641,8 +637,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
         node.mtime = node.ctime = time(NULL);
         inode_write_to_disk_private(inum, &node);
         free(scratch);
-        inode_unlock(inum);
-
         return 0;
     }
 
@@ -669,8 +663,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (ret != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return ret;
                 }
             }
@@ -691,8 +683,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
             if (ret != 0) {
                 free(scratch);
-                inode_unlock(inum);
-
                 return ret;
             }
 
@@ -702,8 +692,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
                 // If inode_set_block_num failed, free the new block we allocated
                 free_data_block(new_phy);
                 free(scratch);
-                inode_unlock(inum);
-
                 return ret;
             }
 
@@ -713,8 +701,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
             inode_write_to_disk_private(inum, &node);
             free(scratch);
-            inode_unlock(inum);
-
             return 0;
         }
     }
@@ -753,8 +739,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (ret != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return ret;
                 }
 
@@ -781,8 +765,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (ret != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return ret;
                 }
 
@@ -804,8 +786,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (ret != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return ret;
                 }
 
@@ -827,8 +807,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (inode_truncate_recursive(node.double_indirect, 2, &blocks_sub, scratch) != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return -EIO;
                 }
 
@@ -849,8 +827,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
                 // iterate over level1 pointers and free children as needed
                 if (read_data_block(scratch, node.double_indirect) != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return -EIO;
                 }
 
@@ -877,8 +853,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                             if (inode_truncate_recursive(l1[idx], 1, &blocks_sub, scratch) != 0) {
                                 free(scratch);
-                                inode_unlock(inum);
-
                                 return -EIO;
                             }
 
@@ -901,8 +875,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (write_to_next_free_block(scratch, &new_l1) != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return -EIO;
                 }
 
@@ -923,8 +895,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (inode_truncate_recursive(node.triple_indirect, 3, &blocks_sub, scratch) != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return -EIO;
                 }
 
@@ -944,8 +914,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
             if (node.triple_indirect) {
                 if (read_data_block(scratch, node.triple_indirect) != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return -EIO;
                 }
 
@@ -974,7 +942,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                             if (inode_truncate_recursive(l2[i2], 2, &blocks_sub, scratch) != 0) {
                                 free(scratch);
-                                inode_unlock(inum);
                                 return -EIO;
                             }
 
@@ -996,8 +963,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
 
                 if (write_to_next_free_block(scratch, &new_l2) != 0) {
                     free(scratch);
-                    inode_unlock(inum);
-
                     return -EIO;
                 }
 
@@ -1013,8 +978,6 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
     inode_write_to_disk_private(inum, &node);
 
     free(scratch);
-    inode_unlock(inum);
-
     return 0;
 }
 
