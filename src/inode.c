@@ -31,7 +31,7 @@
 // Keep size fixed to pack nicely into BYTES_PER_BLOCK.
 typedef struct directory_entry {
     uint32_t inum;
-    char* name;
+    char name[MAX_FILENAME_LEN + 1];
     int is_valid;
 } directory_entry;
 
@@ -1253,7 +1253,7 @@ int inode_add_dirent(uint32_t parent_inum, directory_entry* entry) {
     entry->is_valid = 1;
     memcpy((void*)&list[index],(void*)entry,sizeof(entry));
     index++;
-    list[index].name = NULL;
+    list[index].name[0] = 0;
     list[index].inum = 0;
     list[index].is_valid = 0;
     index++;
@@ -1446,8 +1446,9 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
 
     // add dirent to parent
     directory_entry ent;
-    ent.inum = new_inum;
-    ent.name = basepart;
+    ent.inum = new_inum; 
+    strncpy(ent.name, basepart, MAX_FILENAME_LEN);
+
     if (inode_add_dirent((uint32_t)parent_inum, &ent) != 0) {
         // cleanup: remove inode and its blocks
         inode_free(new_inum);
@@ -1482,7 +1483,7 @@ int inode_unlink(const char *path) {
 
     directory_entry entry_of_file;
     entry_of_file.inum = target;
-    entry_of_file.name = basepart;
+    strncpy(entry_of_file.name, basepart, MAX_FILENAME_LEN);
 
     struct inode node;
     inode_read_from_disk_private((uint32_t)target, &node);
@@ -1705,14 +1706,10 @@ int format_inodes() {
 
     directory_entry root_ent[3];
     root_ent[0].inum = return_root_inode();
-    char name_buf1[MAX_FILENAME_LEN + 1];
-    root_ent[0].name = name_buf1;
     root_ent[0].is_valid = 1;
     strncpy(root_ent[0].name, ".", MAX_FILENAME_LEN); 
 
     root_ent[1].inum = return_root_inode();
-    char name_buf2[MAX_FILENAME_LEN + 1];
-    root_ent[1].name = name_buf2;
     root_ent[1].is_valid = 1;
     strncpy(root_ent[1].name, "..", MAX_FILENAME_LEN); 
 
@@ -1889,7 +1886,7 @@ int inode_rmdir(const char *path) {
     // Remove from parent
     directory_entry dent;
     dent.inum = target_inum;
-    dent.name = basepart;
+    strncpy(dent.name, basepart, MAX_FILENAME_LEN);
 
     int ret = inode_remove_dirent((uint32_t)parent_inum, &dent);
     if (ret != 0) {         
@@ -2028,7 +2025,7 @@ int inode_rename(const char *from, const char *to) {
     // 7. Add Link to New Parent
     directory_entry new_val;
     new_val.inum = target_inum;
-    new_val.name = to_base;
+    strncpy(new_val.name, to_base, MAX_FILENAME_LEN);
 
     ret = inode_add_dirent((uint32_t)to_parent_inum, &new_val);
 
@@ -2043,7 +2040,7 @@ int inode_rename(const char *from, const char *to) {
     // 8. Remove Link from Old Parent
     directory_entry old_val;
     old_val.inum = target_inum;
-    old_val.name = from_base;
+    strncpy(old_val.name, from_base, MAX_FILENAME_LEN);
     ret = inode_remove_dirent((uint32_t)from_parent_inum, &old_val);
 
     if (ret != 0) {
@@ -2478,7 +2475,7 @@ int inode_link(uint32_t src_inum, const char *newpath) {
     // 3. Add directory entry
     directory_entry ent;
     ent.inum = src_inum;
-    ent.name = base;
+    strncpy(ent.name, base, MAX_FILENAME_LEN);
     int res = inode_add_dirent(parent_inum, &ent);
     
     if (res != 0) {
