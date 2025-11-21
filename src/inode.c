@@ -1293,7 +1293,7 @@ int inode_remove_dirent(uint32_t parent_inum, directory_entry* entry) {
     directory_entry* list = (directory_entry*)scratch;
     directory_entry* new_list = (directory_entry*)malloc(node.size + 2 * sizeof(directory_entry));
     memset((void*)new_list,0,node.size + 2 * sizeof(directory_entry));
-    
+
     uint32_t new_list_index = 0;
 
     uint64_t index = 0;
@@ -1551,48 +1551,33 @@ int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
     // There is a compiler error here. 
     
     struct inode node;
+    inode_lock(dir_inum);
     inode_read_from_disk(dir_inum, &node);
 
     if (!S_ISDIR(node.mode)) {
+        inode_unlock(dir_inum);
         return -ENOTDIR;
     }
 
-    uint8_t *scratch;
-    create_buffer((void**)&scratch);
+    uint8_t *scratch = (uint8_t*)malloc(node.size); 
+    memset(scratch,0,node.size);
+    inode_read(dir_inum, scratch, node.size, 0);
+    directory_entry* list = (directory_entry*)scratch;
 
-    if (!scratch) {
-        return -ENOMEM;
-    }
-
-    uint32_t per = dir_entries_per_block();
-    uint64_t total_blocks = (node.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
-
-    for (uint64_t b = 0; b < total_blocks; ++b) {
-        uint32_t phy = inode_get_block_num(&node, b, scratch);
-
-        if (phy == 0) continue;
-
-        if (read_data_block(scratch, phy) != 0) { 
-            free(scratch); 
-
-            return -EIO; 
-        }
-
-        directory_entry *ents = (directory_entry*)scratch;
-
-        for (uint32_t i = 0; i < per; ++i) {
-            if (ents[i].inum != 0) {
-                if ((*filler)(buf, ents[i].name, NULL, 0, 0)) {
-                    free(scratch);
-
-                    return 0;
-                }
+    uint64_t index = 0;
+    while(list[index].is_valid == 1)
+    {
+        if (list[index].inum != 0) {
+            if ((*filler)(buf, list[index].name, NULL, 0, 0)) {
+                free(scratch);
+                inode_unlock(dir_inum);
+                return 0;
             }
         }
+        index++;
     }
-
+    inode_unlock(dir_inum);
     free(scratch);
-
     return 0;
 }
 
@@ -1708,9 +1693,17 @@ int format_inodes() {
 
     directory_entry root_ent[3];
     root_ent[0].inum = 0;
+    char name_buf1[MAX_FILENAME_LEN + 1];
+    root_ent[0].name = name_buf1;
+    root_ent[0].is_valid = 1;
     strncpy(root_ent[0].name, ".", MAX_FILENAME_LEN); 
+
     root_ent[1].inum = 0;
+    char name_buf2[MAX_FILENAME_LEN + 1];
+    root_ent[1].name = name_buf2;
+    root_ent[1].is_valid = 1;
     strncpy(root_ent[1].name, "..", MAX_FILENAME_LEN); 
+
     root_ent[2].inum = 0;
     root_ent[2].is_valid = 0;
 
