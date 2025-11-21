@@ -266,6 +266,9 @@ int inode_free(uint32_t inum) {
         return ret; 
     }
 
+    // clear out data blocks.
+    inode_truncate_private(inum, 0); 
+
     buf[byte_idx] &= ~(1u << bit_in_byte);
     // TODO: Need to call free_data_block() for all data blocks!
     ret = write_inode_block(buf, b);
@@ -1142,17 +1145,6 @@ static ssize_t inode_write_private(uint32_t inum, const void *buf, size_t size, 
             free(scratch);
 
             return -EIO;
-        }
-
-        // Note: inode_set_block_num already freed old data block for direct blocks.
-        // For indirect children, the free of the old data block (if present) was done
-        // during the pointer-tree CoW in our set_block_recursive (the leaf set frees children).
-        // To be safe: if old_phy still exists and was not freed, free it:
-        if (old_phy != 0 && old_phy != new_phy) {
-            // old_phy may have been freed by inode_set_block_num; free_data_block should
-            // be idempotent or reference-count aware on L1. We'll attempt to free
-            // but ignore errors: allocator will manage refcounts.
-            free_data_block(old_phy);
         }
 
         written += to_write;
