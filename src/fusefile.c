@@ -166,7 +166,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
             return -ENOENT;
         }
         // create new file
-        r = inode_create(path, S_IFREG | finfo->flags, &inode);
+        r = inode_create(path, S_IFREG | (mode_t)finfo->fh, &inode);
         if(r < 0 && r != -EEXIST) // overwrite.
         {
             return r;
@@ -176,6 +176,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     else
     {
         inode = (uint32_t)r;
+        finfo->fh = (uint64_t)inode;
     }
 
     if(finfo->flags & O_EXCL && r != -FILE_NOT_FOUND)
@@ -262,7 +263,7 @@ int frostbyte_create(const char* path, mode_t fmode, struct fuse_file_info* finf
     print_fuse_info(finfo);
     int32_t i = finfo->flags | O_CREAT | O_WRONLY | O_TRUNC;
     finfo->flags = i;
-
+    finfo->fh = (uint64_t)fmode; // temp, store mode to open call.
     return frostbyte_open(path, finfo);
 }
 

@@ -1251,7 +1251,7 @@ int inode_add_dirent(uint32_t parent_inum, directory_entry* entry) {
         index++;
     }
     entry->is_valid = 1;
-    memcpy((void*)&list[index],(void*)entry,sizeof(entry));
+    memcpy((void*)&list[index],(void*)entry,sizeof(directory_entry));
     index++;
     list[index].name[0] = 0;
     list[index].inum = 0;
@@ -1952,7 +1952,7 @@ int inode_rmdir(const char *path) {
 int inode_rename(const char *from, const char *to) {
     int ret = 0;
     char *from_dup = NULL, *to_dup = NULL;
-    char *from_dup2 = NULL, *to_dup2 = NULL;
+    char *from_dup2 = NULL;
     char *from_dir = NULL, *from_base = NULL;
     char *to_dir_dup = NULL, *to_base_dup = NULL;
     char *to_dir = NULL, *to_base = NULL;
