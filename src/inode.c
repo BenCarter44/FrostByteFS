@@ -1336,19 +1336,21 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
 
     // Duplicate path for dirname/basename
     char *pathdup = strdup(path);
+    char *pathdup2 = strdup(path);
 
     if (!pathdup) {
         return -ENOMEM;
     }
 
     char *dirpart = dirname(pathdup);
-    char *basepart = basename(pathdup);
+    char *basepart = basename(pathdup2);
 
     // Find parent inode
     int parent_inum = inode_find_by_path(dirpart);
 
     if (parent_inum < 0) { 
         free(pathdup); 
+        free(pathdup2);
         return parent_inum; 
     }
 
@@ -1360,6 +1362,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
     if (!S_ISDIR(parent.mode)) { 
         inode_unlock(parent_inum);
         free(pathdup); 
+        free(pathdup2);
         return -ENOTDIR; 
     }
 
@@ -1368,6 +1371,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
 
     if (exists >= 0) { 
         free(pathdup); 
+        free(pathdup2);
         inode_unlock(parent_inum);
         return -EEXIST; 
     }
@@ -1376,6 +1380,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
     uint32_t new_inum;
     if (inode_alloc(&new_inum) != 0) { 
         free(pathdup); 
+        free(pathdup2);
         return -ENOSPC; 
     }
 
@@ -1394,6 +1399,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
     {
         inode_free(new_inum);
         free(pathdup);
+        free(pathdup2);
         inode_unlock(parent_inum);
         return -EIO;
     }
@@ -1407,6 +1413,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         if (!scratch) { 
             inode_free(new_inum); 
             free(pathdup); 
+            free(pathdup2);
             inode_unlock(parent_inum);
             return -ENOMEM; 
         }
@@ -1426,6 +1433,7 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
             free(scratch); 
             inode_free(new_inum); 
             free(pathdup); 
+            free(pathdup2);
             inode_unlock(parent_inum);
             return -EIO;
         }
@@ -1453,12 +1461,14 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
         // cleanup: remove inode and its blocks
         inode_free(new_inum);
         free(pathdup);
+        free(pathdup2);
         inode_unlock(parent_inum);
         return -EIO;
     }
 
     *out_inum = new_inum;
     free(pathdup);
+    free(pathdup2);
     inode_unlock(parent_inum);
     return 0;
 }
@@ -1470,14 +1480,16 @@ int inode_unlink(const char *path) {
     if (!path || strcmp(path, "/") == 0) return -EINVAL;
     char *dup = strdup(path);
     if (!dup) return -ENOMEM;
+    char *dup2 = strdup(path);
+    if (!dup2) return -ENOMEM;
     char *dirpart = dirname(dup);
-    char *basepart = basename(dup);
+    char *basepart = basename(dup2);
 
     int parent = inode_find_by_path(dirpart);
-    if (parent < 0) { free(dup); return parent; }
+    if (parent < 0) { free(dup); free(dup2); return parent; }
 
     int target = inode_find_dirent((uint32_t)parent, basepart);
-    if (target < 0) { free(dup); return -ENOENT; }
+    if (target < 0) { free(dup); free(dup2); return -ENOENT; }
 
     inode_lock(parent);
 
@@ -1487,10 +1499,10 @@ int inode_unlink(const char *path) {
 
     struct inode node;
     inode_read_from_disk_private((uint32_t)target, &node);
-    if (S_ISDIR(node.mode)) { free(dup); return -EISDIR; }
+    if (S_ISDIR(node.mode)) { free(dup); free(dup2); return -EISDIR; }
 
     // Remove from parent dir
-    if (inode_remove_dirent((uint32_t)parent, &entry_of_file) != 0) { free(dup); return -EIO; }
+    if (inode_remove_dirent((uint32_t)parent, &entry_of_file) != 0) { free(dup); free(dup2); return -EIO; }
 
     // Decrement link and possibly free inode
     inode_lock((uint32_t)target);
@@ -1503,7 +1515,7 @@ int inode_unlink(const char *path) {
         inode_write_to_disk_private((uint32_t)target, &node);
         inode_unlock((uint32_t)target);
         inode_unlock(parent);
-        free(dup);
+        free(dup); free(dup2);
         return 0;
     }
 
@@ -1545,7 +1557,7 @@ int inode_unlink(const char *path) {
     inode_unlock((uint32_t)target);
 
     inode_free((uint32_t)target);
-    free(dup);
+    free(dup); free(dup2);
     inode_unlock(parent);
     return 0;
 }
@@ -1729,7 +1741,8 @@ int format_inodes() {
     memcpy(scratch, root_ent, sizeof(directory_entry) * 3);
     uint32_t datablock_number = 0;
     // write directory_entry into data block
-    if(write_to_next_free_block(scratch, &datablock_number) != 0)
+    write_to_next_free_block(scratch, &datablock_number); // to get 0
+    if(write_to_next_free_block(scratch, &datablock_number) != 0 || datablock_number != 1)
     {
         free(scratch); 
         free(buf); 
@@ -1841,11 +1854,13 @@ int inode_rmdir(const char *path) {
 
     char *dup = strdup(path);
     if (!dup) return -ENOMEM;
+    char *dup2 = strdup(path);
+    if (!dup2) return -ENOMEM;
     char *dirpart = dirname(dup);
-    char *basepart = basename(dup);
+    char *basepart = basename(dup2);
 
     int parent_inum = inode_find_by_path(dirpart);
-    if (parent_inum < 0) { free(dup); return parent_inum; }
+    if (parent_inum < 0) { free(dup); free(dup2); return parent_inum; }
 
     // Check if target exists in parent
     inode_lock(parent_inum);
@@ -1853,7 +1868,7 @@ int inode_rmdir(const char *path) {
     
     if (target_inum < 0) { 
         inode_unlock(parent_inum);
-        free(dup);
+        free(dup); free(dup2);
         return -ENOENT;
     }
 
@@ -1864,7 +1879,7 @@ int inode_rmdir(const char *path) {
     if (!S_ISDIR(target_node.mode)) {
         inode_unlock(target_inum);
         inode_unlock(parent_inum);
-        free(dup);
+        free(dup); free(dup2);
         return -ENOTDIR;
     }
 
@@ -1873,13 +1888,13 @@ int inode_rmdir(const char *path) {
     if (empty < 0) { 
         inode_unlock(target_inum);
         inode_unlock(parent_inum);
-        free(dup);
+        free(dup); free(dup2);
         return empty;
     } // Error checking
     if (empty == 0) {
         inode_unlock(target_inum);
         inode_unlock(parent_inum);
-        free(dup);
+        free(dup); free(dup2);
         return -ENOTEMPTY;
     }
 
@@ -1892,7 +1907,7 @@ int inode_rmdir(const char *path) {
     if (ret != 0) {         
         inode_unlock(target_inum);
         inode_unlock(parent_inum);
-        free(dup);
+        free(dup); free(dup2);
         return ret;
     }
 
@@ -1921,7 +1936,7 @@ int inode_rmdir(const char *path) {
     
     inode_free((uint32_t)target_inum);
 
-    free(dup);
+    free(dup); free(dup2);
     inode_unlock(target_inum);
     inode_unlock(parent_inum);
     return 0;
@@ -1937,6 +1952,7 @@ int inode_rmdir(const char *path) {
 int inode_rename(const char *from, const char *to) {
     int ret = 0;
     char *from_dup = NULL, *to_dup = NULL;
+    char *from_dup2 = NULL, *to_dup2 = NULL;
     char *from_dir = NULL, *from_base = NULL;
     char *to_dir_dup = NULL, *to_base_dup = NULL;
     char *to_dir = NULL, *to_base = NULL;
@@ -1958,6 +1974,7 @@ int inode_rename(const char *from, const char *to) {
     // 3. Parse Paths
     from_dup = strdup(from);
     to_dup = strdup(to);
+    from_dup2 = strdup(from);
 
     if (!from_dup || !to_dup) { 
         ret = -ENOMEM; 
@@ -1965,7 +1982,7 @@ int inode_rename(const char *from, const char *to) {
     }
 
     from_dir = dirname(from_dup);
-    from_base = basename(from_dup);
+    from_base = basename(from_dup2);
 
     // Need separate duplicate for destination dirname/basename calls
     to_dir_dup = strdup(to);
@@ -2175,6 +2192,7 @@ int inode_rename(const char *from, const char *to) {
     ret = 0;
 
 cleanup:
+    if(from_dup2) free(from_dup2);
     if (from_dup) free(from_dup);
     if (to_dup) free(to_dup);
     if (to_dir_dup) free(to_dir_dup);
@@ -2457,11 +2475,12 @@ int inode_removexattr(uint32_t inode, const char* key) {
 int inode_link(uint32_t src_inum, const char *newpath) {
     // 1. Parse newpath parent/base
     char *dup = strdup(newpath);
+    char *dup2 = strdup(newpath);
     char *dir = dirname(dup);
-    char *base = basename(dup);
+    char *base = basename(dup2);
     
     int parent_inum = inode_find_by_path(dir);
-    if (parent_inum < 0) { free(dup); return parent_inum; }
+    if (parent_inum < 0) { free(dup); free(dup2); return parent_inum; }
 
     // 2. Increment Link Count on Source
     inode_lock(src_inum);
@@ -2487,6 +2506,6 @@ int inode_link(uint32_t src_inum, const char *newpath) {
         inode_unlock(src_inum);
     }
     
-    free(dup);
+    free(dup); free(dup2);
     return res;
 }
