@@ -106,6 +106,7 @@ static int inode_read_from_disk_private(uint32_t inum, struct inode *out);
 static int inode_write_to_disk_private(uint32_t inum, const struct inode *node);
 static ssize_t inode_read_private(uint32_t inum, void *buf, size_t size, off_t offset);
 static ssize_t inode_write_private(uint32_t inum, const void *buf, size_t size, off_t offset);
+int inode_truncate_private(uint32_t inum, off_t newsize);
 
 /* -------------------------
  * Basic inode read/write
@@ -604,6 +605,12 @@ static int inode_truncate_recursive(uint32_t blocknum, uint32_t level,
  *   If shrinking: zeroes tail of last kept block (CoW) and frees later blocks.
  */
 int inode_truncate(uint32_t inum, off_t newsize) {
+    inode_lock(inum);
+    int r = inode_truncate_private(inum, newsize);
+    inode_unlock(inum);
+    return r;
+}
+int inode_truncate_private(uint32_t inum, off_t newsize) {
     if (newsize < 0) return -EINVAL;
 
     int ret = 0;
@@ -1287,7 +1294,7 @@ int inode_add_dirent(uint32_t parent_inum, directory_entry* entry) {
     list[index].inum = 0;
     list[index].is_valid = 0;
     index++;
-    inode_truncate(parent_inum, 0);
+    inode_truncate_private(parent_inum, 0);
     inode_write_private(parent_inum, (void*)list, index * sizeof(directory_entry), 0);
     
     free(scratch);
@@ -1345,7 +1352,7 @@ int inode_remove_dirent(uint32_t parent_inum, directory_entry* entry) {
     new_list[new_list_index].inum = 0;
     new_list[new_list_index].is_valid = 0;
     new_list_index++;
-    inode_truncate(parent_inum, 0);
+    inode_truncate_private(parent_inum, 0);
     inode_write_private(parent_inum, (void*)new_list, new_list_index * sizeof(directory_entry), 0);
     
     free(scratch);
