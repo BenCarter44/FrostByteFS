@@ -109,7 +109,8 @@ int inode_read_from_disk(uint32_t inum, struct inode *out) {
     uint32_t block_num = INODE_TABLE_START_BLOCK + (inum / INODES_PER_BLOCK);
     uint32_t idx = inum % INODES_PER_BLOCK;
 
-    uint8_t *buf = malloc(BYTES_PER_BLOCK);
+    uint8_t *buf;
+    create_buffer(&buf);
     
     if (!buf) {
         memset(out, 0, sizeof(*out));
@@ -135,7 +136,8 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
     uint32_t block_num = INODE_TABLE_START_BLOCK + (inum / INODES_PER_BLOCK);
     uint32_t idx = inum % INODES_PER_BLOCK;
 
-    uint8_t *buf = malloc(BYTES_PER_BLOCK);
+    uint8_t *buf;
+    create_buffer(&buf);
     
     if (!buf) {
         return -INODE_BUFFER_ALLOCATION_FAILED;
@@ -152,7 +154,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
     int rc = 0;
     rc = write_inode_block(buf, block_num);
 
-    free(buf);
+    free_buffer(buf);
 
     return rc;
 }
@@ -163,7 +165,8 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
  * ------------------------- */
 
 int inode_alloc(uint32_t *out_inum) {
-    uint8_t *bytes = malloc(BYTES_PER_BLOCK);
+    uint8_t *bytes;
+    create_buffer(&bytes);
 
     if (!bytes) {
         return -INODE_BUFFER_ALLOCATION_FAILED;
@@ -216,7 +219,8 @@ int inode_alloc(uint32_t *out_inum) {
 }
 
 int inode_free(uint32_t inum) {
-    uint8_t *buf = malloc(BYTES_PER_BLOCK);
+    uint8_t *buf;
+    create_buffer(&buf);
     
     if (!buf) {
         return -INODE_BUFFER_ALLOCATION_FAILED;
@@ -434,7 +438,8 @@ static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
 int inode_set_block_num(uint32_t inum, struct inode *node,
                         uint64_t logical_block, uint32_t new_physical_block)
 {
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+    uint8_t *scratch;
+    create_buffer(&scratch);
     if (!scratch) return -INODE_BUFFER_ALLOCATION_FAILED;
 
     int rc = 0;
@@ -586,7 +591,8 @@ int inode_truncate(uint32_t inum, off_t newsize) {
         inode_unlock(inum); return 0; 
     }
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+    uint8_t *scratch;
+    create_buffer(scratch);
 
     if (!scratch) { 
         inode_unlock(inum); return -INODE_BUFFER_ALLOCATION_FAILED; 
@@ -1004,7 +1010,8 @@ ssize_t inode_read(uint32_t inum, void *buf, size_t size, off_t offset) {
         size = (size_t)(file_size - offset);
     }
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+    uint8_t *scratch;
+    create_buffer(&scratch);
 
     if (!scratch) { 
         inode_unlock(inum); 
@@ -1072,7 +1079,8 @@ ssize_t inode_write(uint32_t inum, const void *buf, size_t size, off_t offset) {
 
     inode_read_from_disk(inum, &node);
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+    uint8_t *scratch;
+    create_buffer(&scratch);
 
     if (!scratch) { 
         inode_unlock(inum); 
@@ -1182,7 +1190,8 @@ int inode_find_dirent(uint32_t dir_inum, const char *name) {
         return -ENOTDIR;
     }
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+    uint8_t *scratch;
+    create_buffer(&scratch);
 
     if (!scratch) {
         return -ENOMEM;
@@ -1234,7 +1243,8 @@ int inode_add_dirent(uint32_t parent_inum, const char *name, uint32_t child_inum
         return -ENOTDIR; 
     }
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+    uint8_t *scratch;
+    create_buffer(&scratch);
 
     if (!scratch) { 
         inode_unlock(parent_inum); 
@@ -1343,7 +1353,8 @@ int inode_remove_dirent(uint32_t parent_inum, const char *name) {
         return -ENOTDIR; 
     }
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+        uint8_t *scratch;
+            create_buffer(&scratch);
 
     if (!scratch) { 
         inode_unlock(parent_inum); 
@@ -1477,7 +1488,8 @@ int inode_create(const char *path, mode_t mode, uint32_t *out_inum) {
     // if directory, create '.' and '..' entries
     if (S_ISDIR(mode)) {
         // create one data block and add '.' and '..'
-        uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+            uint8_t *scratch;
+            create_buffer(&scratch);
 
         if (!scratch) { 
             inode_free(new_inum); 
@@ -1628,7 +1640,8 @@ int inode_readdir(uint32_t dir_inum, void *buf, fuse_fill_dir_t filler) {
         return -ENOTDIR;
     }
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+        uint8_t *scratch;
+            create_buffer(&scratch);
 
     if (!scratch) {
         return -ENOMEM;
@@ -1726,7 +1739,8 @@ int inode_init_root_if_needed() {
     inode_global_init(max_inodes);
 
     // Check bitmap for inode 0
-    void *buf = malloc(BYTES_PER_BLOCK);
+    uint8_t *buf;
+    create_buffer(&buf);
 
     if (!buf) {
         return -ENOMEM;
@@ -1764,7 +1778,8 @@ int inode_init_root_if_needed() {
         root.atime = root.mtime = root.ctime = time(NULL);
 
         // allocate a data block for root dir contents
-        uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+            uint8_t *scratch;
+            create_buffer(&scratch);
 
         if (!scratch) { 
             free(buf); 
@@ -1859,7 +1874,8 @@ static int is_dir_empty(uint32_t dir_inum) {
 
     inode_read_from_disk(dir_inum, &node);
 
-    uint8_t *scratch = malloc(BYTES_PER_BLOCK);
+        uint8_t *scratch;
+            create_buffer(&scratch);
 
     if (!scratch) {
         return -ENOMEM;
@@ -2094,7 +2110,8 @@ int inode_rename(const char *from, const char *to) {
             inode_unlock((uint32_t)to_parent_inum);
 
             // B. Update the ".." entry inside the target directory
-            scratch = malloc(BYTES_PER_BLOCK);
+            create_buffer(&scratch);
+            
 
             if (!scratch) { 
                 ret = -ENOMEM; 
@@ -2188,7 +2205,8 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
     inode_read_from_disk(inode, &node);
 
     uint32_t blk = get_xattr_block_num(&node);
-    uint8_t *buffer = malloc(BYTES_PER_BLOCK);
+    uint8_t *buffer;
+    create_buffer(&buffer);
     if (!buffer) { inode_unlock(inode); return -ENOMEM; }
     memset(buffer, 0, BYTES_PER_BLOCK);
 
@@ -2200,7 +2218,8 @@ int inode_setxattr(uint32_t inode, const char* key, const char* val, size_t len,
 
     // Simple implementation: Linear scan. 
     // We reconstruct the block in a temp buffer to handle add/replace
-    uint8_t *new_buf = malloc(BYTES_PER_BLOCK);
+    uint8_t *new_buf;
+    create_buffer(&new_buf);
     if (!new_buf) { free(buffer); inode_unlock(inode); return -ENOMEM; }
     memset(new_buf, 0, BYTES_PER_BLOCK);
 
@@ -2276,7 +2295,8 @@ int inode_getxattr(uint32_t inode, const char* key, const char* val, size_t len)
     uint32_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
 
-    uint8_t *buffer = malloc(BYTES_PER_BLOCK);
+    uint8_t *buffer;
+    create_buffer(&buffer);
     if (!buffer) { inode_unlock(inode); return -ENOMEM; }
 
     if (read_data_block(buffer, blk) != 0) {
@@ -2320,7 +2340,8 @@ int inode_listxattr(uint32_t inode, char* val, size_t len) {
     uint32_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return 0; }
 
-    uint8_t *buffer = malloc(BYTES_PER_BLOCK);
+    uint8_t *buffer;
+    create_buffer(&buffer);
     if (!buffer) { inode_unlock(inode); return -ENOMEM; }
     if (read_data_block(buffer, blk) != 0) {
         free(buffer); inode_unlock(inode); return -EIO;
@@ -2370,13 +2391,16 @@ int inode_removexattr(uint32_t inode, const char* key) {
     uint32_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
 
-    uint8_t *buffer = malloc(BYTES_PER_BLOCK);
+    uint8_t *buffer;
+    create_buffer(&buffer);
     if (!buffer) { inode_unlock(inode); return -ENOMEM; }
     if (read_data_block(buffer, blk) != 0) {
         free(buffer); inode_unlock(inode); return -EIO;
     }
 
-    uint8_t *new_buf = malloc(BYTES_PER_BLOCK);
+    uint8_t *new_buf;
+    create_buffer(&new_buf); 
+    
     if (!new_buf) { free(buffer); inode_unlock(inode); return -ENOMEM; }
     memset(new_buf, 0, BYTES_PER_BLOCK);
 
