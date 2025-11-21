@@ -281,7 +281,7 @@ int frostbyte_fsync(const char* path, int fint, struct fuse_file_info* finfo)
 
 int frostbyte_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* finfo) 
 {
-    uint32_t inode = 0;
+    int32_t inode = 0;
     inode = inode_find_by_path(path);
     if (inode < 0) {
         return inode;

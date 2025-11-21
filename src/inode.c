@@ -188,30 +188,33 @@ int inode_alloc(uint32_t *out_inum) {
         }
 
         for (uint32_t byte = 0; byte < BYTES_PER_BLOCK; ++byte) {
-            if (bytes[byte] != 0xFF) {
-                for (int bit = 0; bit < 8; ++bit) {
-                    if (!(bytes[byte] & (1u << bit))) {
-                        // allocate this inode
-                        bytes[byte] |= (1u << bit);
+            if (bytes[byte] == 0xFF) {
+                continue;
+            }
+            
+            for (int bit = 0; bit < 8; ++bit) {
+                if (!(bytes[byte] & (1u << bit))) {
+                    // allocate this inode
+                    bytes[byte] |= (1u << bit);
 
-                        ret = write_inode_block(bytes, blocknum);
+                    ret = write_inode_block(bytes, blocknum);
 
-                        if (ret != 0) {
-                            free(bytes);
-                            return -ret;
-                        }
-
-                        uint32_t bit_index = (b * BYTES_PER_BLOCK * 8) + (byte * 8) + bit;
-                        *out_inum = bit_index;
-                        // zero the inode struct on disk
-                        struct inode empty = {0};
-                        inode_write_to_disk(*out_inum, &empty);
+                    if (ret != 0) {
                         free(bytes);
-
-                        return 0;
+                        return -ret;
                     }
+
+                    uint32_t bit_index = (b * BYTES_PER_BLOCK * 8) + (byte * 8) + bit;
+                    *out_inum = bit_index;
+                    // zero the inode struct on disk
+                    struct inode empty = {0};
+                    inode_write_to_disk(*out_inum, &empty);
+                    free(bytes);
+
+                    return 0;
                 }
             }
+            
         }
     }
 
@@ -1772,6 +1775,7 @@ int format_inodes() {
     }
 
     // create root inode structure
+
     struct inode root;
     memset(&root, 0, sizeof(root));
     root.mode = S_IFDIR | 0755;
@@ -1811,6 +1815,17 @@ int format_inodes() {
     }
 
     root.direct_blocks[0] = blocknum;
+
+    // tell allocator that root has been allocated
+    uint32_t out_num = 19;
+    inode_alloc(&out_num);
+    if(out_num != 0)
+    {
+        free(scratch);
+        free(buf);
+        return -EIO;        
+    }
+
     inode_write_to_disk(0, &root);
     free(scratch);
 
