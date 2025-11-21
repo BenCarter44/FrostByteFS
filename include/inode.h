@@ -54,13 +54,22 @@ struct inode {
 // --- iNode Layer API ---
 
 /**
- * @brief Initializes the iNode system if disk is unformatted.
+ * @brief Formats the iNode system if disk is unformatted.
  * Creates the inode bitmap and the root directory (inode 0).
  *
  * @param max_inodes Total number of inodes supported by filesystem.
  * @return 0 on success or negative errno on failure.
  */
-int inode_init_root_if_needed();
+int format_inodes();
+
+/**
+ * @brief Set up inode locks.
+ * 
+ * @return int 
+ */
+void inode_global_init();
+
+
 
 /**
  * @brief Find inode number for absolute path (returns >=0 or negative errno)

@@ -41,11 +41,12 @@ void* frost_init(struct fuse_conn_info *conn,
         printf("L3 (FUSE): Formatting Layer 2 (iNode system)...\n");
         
         // Initialize Layer 2 (iNode system)
-        inode_init_root_if_needed();
+        format_inodes();
 
         printf("L3 (FUSE): Format complete.\n");
     } else {
         printf("L3 (FUSE): Disk mounted successfully.\n");
+        inode_global_init();
     }
 
     return NULL; // No private data needed for other callbacks

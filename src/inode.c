@@ -43,7 +43,8 @@ int inline return_root_inode()
     return 0;
 }
 
-void inode_global_init(uint32_t max_inodes) {
+void inode_global_init() {
+    uint32_t max_inodes = MAX_INODES;
     if (inode_locks != NULL && g_max_inodes == max_inodes) {
         return;
     }
@@ -144,6 +145,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
     }
     
     // todo: should be continued or return error code
+    printf("Save INODE blk read: %u\n", block_num);
     if (read_inode_block(buf, block_num) != 0) {
         // If we cannot read, try to zero buffer (new FS) and continue
         memset(buf, 0, BYTES_PER_BLOCK);
@@ -152,6 +154,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node) {
     memcpy(((uint8_t*)buf) + idx * sizeof(struct inode), node, sizeof(struct inode));
 
     int rc = 0;
+    printf("Read INODE blk: %u\n", block_num);
     rc = write_inode_block(buf, block_num);
 
     free_buffer(buf);
@@ -1728,15 +1731,16 @@ int inode_find_by_path(const char *path) {
     return cur_inum;
 }
 
+
+
 /*
- * inode_init_root_if_needed:
+ * format_inodes:
  *   Zero out inode-bitmap region and create root inode if not present.
  *   This function also initializes inode_global_init if locks not set.
  */
-int inode_init_root_if_needed() {
-    uint32_t max_inodes = MAX_INODES;
+int format_inodes() {
     // Ensure locks exist
-    inode_global_init(max_inodes);
+    inode_global_init();
 
     // Check bitmap for inode 0
     uint8_t *buf;
@@ -1746,70 +1750,69 @@ int inode_init_root_if_needed() {
         return -ENOMEM;
     }
 
-    uint32_t bitmap_blocknum = INODE_TABLE_START_BLOCK; // first bitmap block
+    // uint32_t bitmap_blocknum = INODE_TABLE_START_BLOCK; // first bitmap block
 
-    if (read_inode_block(buf, bitmap_blocknum) != 0) {
-        // treat as fresh fs: zero out bitmap blocks
-        memset(buf, 0, BYTES_PER_BLOCK);
 
-        for (uint32_t b = 0; b < INODE_BITMAP_BLOCKS; ++b) {
-            if (write_inode_block(buf, INODE_TABLE_START_BLOCK + b) != 0) {
-                free(buf); 
-                return -EIO;
-            }
-        }
+    // treat as fresh fs: zero out bitmap blocks
+    memset(buf, 0, BYTES_PER_BLOCK);
 
-        // allocate inode 0 by setting bit 0
-        ((uint8_t*)buf)[0] |= 1u;
-
-        if (write_inode_block(buf, INODE_TABLE_START_BLOCK) != 0) { 
+    for (uint32_t b = 0; b < INODE_BITMAP_BLOCKS; ++b) {
+        if (write_inode_block(buf, INODE_TABLE_START_BLOCK + b) != 0) {
             free(buf); 
-            return -EIO; 
+            return -EIO;
         }
-
-        // create root inode structure
-        struct inode root;
-        memset(&root, 0, sizeof(root));
-        root.mode = S_IFDIR | 0755;
-        root.uid = getuid(); 
-        root.gid = getgid();
-        root.nlink = 2;
-        root.size = BYTES_PER_BLOCK;
-        root.atime = root.mtime = root.ctime = time(NULL);
-
-        // allocate a data block for root dir contents
-        uint8_t *scratch;
-        create_buffer((void**)&scratch);
-
-        if (!scratch) { 
-            free(buf); 
-            return -ENOMEM; 
-        }
-
-        memset(scratch, 0, BYTES_PER_BLOCK);
-        directory_entry *ents = (directory_entry*)scratch;
-
-        ents[0].inum = 0; 
-        strncpy(ents[0].name, ".", MAX_FILENAME_LEN); 
-        ents[0].name[MAX_FILENAME_LEN] = '\0';
-
-        ents[1].inum = 0; 
-        strncpy(ents[1].name, "..", MAX_FILENAME_LEN); 
-        ents[1].name[MAX_FILENAME_LEN] = '\0';
-
-        uint32_t blocknum = 0;
-
-        if (write_to_next_free_block(scratch, &blocknum) != 0) { 
-            free(scratch); 
-            free(buf); 
-
-            return -EIO; 
-        }
-
-        root.direct_blocks[0] = blocknum;
-        inode_write_to_disk(0, &root);
-        free(scratch);
     }
+
+    // allocate inode 0 by setting bit 0
+    ((uint8_t*)buf)[0] |= 1u;
+
+    if (write_inode_block(buf, INODE_TABLE_START_BLOCK) != 0) { 
+        free(buf); 
+        return -EIO; 
+    }
+
+    // create root inode structure
+    struct inode root;
+    memset(&root, 0, sizeof(root));
+    root.mode = S_IFDIR | 0755;
+    root.uid = getuid(); 
+    root.gid = getgid();
+    root.nlink = 2;
+    root.size = BYTES_PER_BLOCK;
+    root.atime = root.mtime = root.ctime = time(NULL);
+
+    // allocate a data block for root dir contents
+    uint8_t *scratch;
+    create_buffer((void**)&scratch);
+
+    if (!scratch) { 
+        free(buf); 
+        return -ENOMEM; 
+    }
+
+    memset(scratch, 0, BYTES_PER_BLOCK);
+    directory_entry *ents = (directory_entry*)scratch;
+
+    ents[0].inum = 0; 
+    strncpy(ents[0].name, ".", MAX_FILENAME_LEN); 
+    ents[0].name[MAX_FILENAME_LEN] = '\0';
+
+    ents[1].inum = 0; 
+    strncpy(ents[1].name, "..", MAX_FILENAME_LEN); 
+    ents[1].name[MAX_FILENAME_LEN] = '\0';
+
+    uint32_t blocknum = 0;
+
+    if (write_to_next_free_block(scratch, &blocknum) != 0) { 
+        free(scratch); 
+        free(buf); 
+
+        return -EIO; 
+    }
+
+    root.direct_blocks[0] = blocknum;
+    inode_write_to_disk(0, &root);
+    free(scratch);
 
     free(buf);
     return 0;
