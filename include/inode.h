@@ -55,7 +55,7 @@ struct inode {
 
 /**
  * @brief Formats the iNode system if disk is unformatted.
- * Creates the inode bitmap and the root directory (inode 0).
+ * Creates the inode bitmap and the root directory (inode 1). NOT ZERO!!
  *
  * @param max_inodes Total number of inodes supported by filesystem.
  * @return 0 on success or negative errno on failure.
@@ -98,7 +98,7 @@ int inode_write_to_disk(uint32_t inum, const struct inode *node);
 
 
 // New helpers to be implemented ..... 
-int return_root_inode(); // done, just returns 0
+int return_root_inode(); // done, just returns 1 ROOT INODE IS 1!
 
 // int inode_rename(uint32_t inode, const char *to);
 int inode_rename(const char *from, const char *to);

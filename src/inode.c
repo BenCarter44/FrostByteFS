@@ -41,7 +41,7 @@ static uint32_t g_max_inodes = 0;
 
 int inline return_root_inode()
 {
-    return 0;
+    return 1;
 }
 
 void inode_global_init() {
@@ -1602,7 +1602,7 @@ int inode_find_by_path(const char *path) {
     }
 
     if (strcmp(path, "/") == 0) {
-        return 0; // root
+        return return_root_inode(); // root
     }
 
     // duplicate path for strtok
@@ -1614,7 +1614,7 @@ int inode_find_by_path(const char *path) {
 
     char *saveptr = NULL;
     char *token = strtok_r(dup, "/", &saveptr);
-    int cur_inum = 0;
+    int cur_inum = return_root_inode();
 
     while (token) {
         struct inode node;
@@ -1704,25 +1704,26 @@ int format_inodes() {
 
 
     directory_entry root_ent[3];
-    root_ent[0].inum = 0;
+    root_ent[0].inum = return_root_inode();
     char name_buf1[MAX_FILENAME_LEN + 1];
     root_ent[0].name = name_buf1;
     root_ent[0].is_valid = 1;
     strncpy(root_ent[0].name, ".", MAX_FILENAME_LEN); 
 
-    root_ent[1].inum = 0;
+    root_ent[1].inum = return_root_inode();
     char name_buf2[MAX_FILENAME_LEN + 1];
     root_ent[1].name = name_buf2;
     root_ent[1].is_valid = 1;
     strncpy(root_ent[1].name, "..", MAX_FILENAME_LEN); 
 
-    root_ent[2].inum = 0;
+    root_ent[2].inum = return_root_inode();
     root_ent[2].is_valid = 0;
 
     // tell allocator that root has been allocated
     uint32_t out_num = 19;
-    inode_alloc(&out_num);
-    if(out_num != 0)
+    inode_alloc(&out_num); // to mark 0 as used.
+    inode_alloc(&out_num); // to get inode 1 for root.
+    if(out_num != return_root_inode())
     {
         free(scratch);
         free(buf);
@@ -1740,9 +1741,14 @@ int format_inodes() {
 
     // write inode
     root.direct_blocks[0] = datablock_number;
-    inode_write_to_disk_private(0, &root);
+    inode_write_to_disk_private(return_root_inode(), &root);
     free(scratch);
     free(buf);
+
+    // test
+    int a = inode_find_dirent(return_root_inode(), "..");
+    printf("Found: %d\n", a);
+
     return 0;
 }
 
