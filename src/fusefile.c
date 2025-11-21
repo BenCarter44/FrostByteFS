@@ -167,7 +167,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
         }
         // create new file
         r = inode_create(path, S_IFREG | finfo->flags, &inode);
-        if(r < 0)
+        if(r < 0 && r != -EEXIST) // overwrite.
         {
             return r;
         }
@@ -177,7 +177,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     {
         inode = (uint32_t)r;
     }
-    
+
     if(finfo->flags & O_EXCL && r != -FILE_NOT_FOUND)
     {
         errno = EEXIST;
