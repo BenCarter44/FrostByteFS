@@ -154,6 +154,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     r = inode_find_by_path(path);
     if(r < 0 && r != -ENOENT)
     {
+        // error.
         return r;
     }
     if(r == -ENOENT)
@@ -172,7 +173,11 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
         }
         finfo->fh = (uint64_t)inode;
     }
-    inode = (uint32_t)r;
+    else
+    {
+        inode = (uint32_t)r;
+    }
+    
     if(finfo->flags & O_EXCL && r != -FILE_NOT_FOUND)
     {
         errno = EEXIST;
