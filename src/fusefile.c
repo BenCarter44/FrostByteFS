@@ -175,15 +175,15 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     }
     else
     {
+        if(finfo->flags & O_EXCL && r != -FILE_NOT_FOUND)
+        {
+            errno = EEXIST;
+            return -EEXIST;
+        }
         inode = (uint32_t)r;
         finfo->fh = (uint64_t)inode;
     }
 
-    if(finfo->flags & O_EXCL && r != -FILE_NOT_FOUND)
-    {
-        errno = EEXIST;
-        return -EEXIST;
-    }
 
     // What should be done if new file?
     if(finfo->flags & O_TRUNC)
