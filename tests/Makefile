@@ -9,3 +9,6 @@ rawdisk-example: rawmain.c
 
 allocator-example: allocator_test.c
 	gcc -DCOMPILE_FOR_TESTS ../src/*.c allocator_test.c -I../include/ `pkg-config fuse3 --cflags --libs` -g3 -O0 -Wl,-rpath=/usr/local/lib64 -o allocator.out
+
+inode-example: inode_test.c
+	gcc -DCOMPILE_FOR_TESTS ../src/*.c inode_test.c -I../include/ `pkg-config fuse3 --cflags --libs` -g3 -O0 -Wl,-rpath=/usr/local/lib64 -o allocator.out
