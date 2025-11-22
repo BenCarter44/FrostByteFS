@@ -3,6 +3,8 @@
 #define REF_IS_NON_EXISTANT 255
 #define REF_IS_FULL 254
 
+pthread_mutex_t* allocator_lock;
+
 // private: do static here:
 static int increment_reference(int8_t value, uint32_t reference_number);
 
@@ -105,6 +107,12 @@ int get_super_block(uint8_t* buffer)
 // Read given data block.
 int read_data_block(uint8_t* buffer, uint32_t block_number)
 {
+    if(block_number == 0)
+    {
+        memset(buffer, 0, BYTES_PER_BLOCK);
+        return 0;
+    }
+    pthread_mutex_lock(allocator_lock);
     // check if in use!
     uint32_t index = block_number / BYTES_PER_BLOCK;
     read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
@@ -112,8 +120,12 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
     if(value > 0 && value != REF_IS_NON_EXISTANT)
     {
         // good. overwrite buffer
-        return fetch_data_block(buffer, block_number);
+        int r = fetch_data_block(buffer, block_number);
+        pthread_mutex_unlock(allocator_lock);
+        return r;
     }
+    pthread_mutex_unlock(allocator_lock);
+
     if(value == REF_IS_NON_EXISTANT)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
@@ -125,6 +137,7 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
 int free_data_block(uint32_t block_number)
 {
     // check if in use!
+    pthread_mutex_lock(allocator_lock);
     uint8_t* buffer;
     create_buffer((void**)&buffer);
 
@@ -137,9 +150,11 @@ int free_data_block(uint32_t block_number)
         buffer[block_number % BYTES_PER_BLOCK] -= 1;
         int r = write_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
         free_buffer(buffer);
+        pthread_mutex_unlock(allocator_lock);
         return r;
     }
     free_buffer(buffer);
+    pthread_mutex_unlock(allocator_lock);
     return -ALLOCATOR_DOUBLE_FREE;
 }
 
@@ -182,10 +197,12 @@ static int search_for_next_free_block(uint32_t* block_number)
 int write_to_next_free_block(const uint8_t* buffer, uint32_t* block_number)
 {
     // requires atomic operations!
+    pthread_mutex_lock(allocator_lock);
 
     int ret = search_for_next_free_block(block_number);
     if(ret < 0)
     {
+        pthread_mutex_unlock(allocator_lock);
         return ret;
     }
 
@@ -193,10 +210,12 @@ int write_to_next_free_block(const uint8_t* buffer, uint32_t* block_number)
     ret = write_data_block(buffer, *block_number);
     if(ret < 0)
     {
+        pthread_mutex_unlock(allocator_lock);
         return ret;
     }
 
     ret = increment_reference(1, *block_number); // increment by 1
+    pthread_mutex_unlock(allocator_lock);
     return 0;
 }
 
@@ -228,6 +247,8 @@ int format_super_block()
 
 bool allocator_check_valid_super_block()
 {
+    pthread_mutex_init(allocator_lock, NULL); 
+
     uint8_t* buffer;
     create_buffer((void**)&buffer);
     int r = read_block_raw(buffer, SUPER_BLOCK);
