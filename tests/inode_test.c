@@ -341,7 +341,7 @@ int main(int argc, char** argv)
 
     // truncate file
     printf("Truncate file '/tt' \n");
-    inode_truncate(2, 0);
+    check_truncate(2, 0);
 
     // write to file
     printf("Write to file '/tt' \n");
@@ -363,6 +363,9 @@ int main(int argc, char** argv)
     printf("Write more to file '/tv' \n");
     inode_write(3, buffer_data, BYTES_PER_BLOCK, BYTES_PER_BLOCK - 50); 
     check_write(3, BYTES_PER_BLOCK * 2 - 50);
+
+    printf("Truncate file '/tt' \n");
+    check_truncate(2, 0);
 
     
 

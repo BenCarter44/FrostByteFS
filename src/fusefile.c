@@ -188,7 +188,9 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
     // What should be done if new file?
     if(finfo->flags & O_TRUNC)
     {
+        printf("Truncating file...\n");
         inode_truncate(inode, 0);
+        // verify node list is deleted!
     }
 
     // What should the permissions be?
@@ -477,7 +479,9 @@ int frostbyte_write(const char* path, const char* buffer, size_t len, off_t offs
     }
 
     // --- 2. Call the iNode layer's write function (L2) ---
-    return inode_write(inum, buffer, len, offset);
+    int r = inode_write(inum, buffer, len, offset);
+    printf("L3 (FUSE): frost_write RET: %d \n", r);
+    return r;
 }
 
 

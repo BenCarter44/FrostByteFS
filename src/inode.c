@@ -93,8 +93,6 @@ static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
                                     uint64_t logical_index, uint32_t new_data_block,
                                     uint8_t *scratch);
 
-static int inode_truncate_recursive(uint32_t blocknum, uint32_t level, uint64_t *blocks_to_free, uint8_t *scratch);
-
 static int inode_read_from_disk_private(uint32_t inum, struct inode *out);
 static int inode_write_to_disk_private(uint32_t inum, const struct inode *node);
 static ssize_t inode_read_private(uint32_t inum, void *buf, size_t size, off_t offset);
@@ -278,6 +276,163 @@ int inode_free(uint32_t inum) {
 /* -------------------------
  * Indirect addressing helpers
  * ------------------------- */
+/**
+ *  Map logical block (as visible in single indirect address) from table block
+ */
+int single_indirect_address(uint32_t logical_block, uint32_t datatable, uint32_t* out_datablock)
+{
+    uint32_t *scratch;
+    create_buffer((void**)&scratch);
+    int r = read_data_block((uint8_t*)scratch, datatable);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    *out_datablock = scratch[logical_block];
+    free(scratch);
+    return 0;
+}
+
+int double_indirect_address(uint32_t logical_block, uint32_t datatable, uint32_t* out_datablock)
+{
+    // logical block 55:
+    uint32_t row_index = logical_block / POINTERS_PER_BLOCK;
+
+    uint32_t *scratch;
+    create_buffer((void**)&scratch);
+    int r = read_data_block((uint8_t*)scratch, datatable);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    uint32_t row_datatable = scratch[row_index];
+    free(scratch);
+    return single_indirect_address(logical_block % POINTERS_PER_BLOCK, row_datatable, out_datablock);
+}
+
+int triple_indirect_address(uint32_t logical_block, uint32_t datatable, uint32_t* out_datablock)
+{
+    uint32_t row_index = logical_block / (POINTERS_PER_BLOCK * POINTERS_PER_BLOCK);
+    uint32_t *scratch;
+    create_buffer((void**)&scratch);
+    int r = read_data_block((uint8_t*)scratch, datatable);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    uint32_t matrix_datatable = scratch[row_index];
+    free(scratch);
+    return double_indirect_address(logical_block % (POINTERS_PER_BLOCK * POINTERS_PER_BLOCK), matrix_datatable, out_datablock);
+}
+
+int single_indirect_address_edit(uint32_t logical_block, uint32_t datatable, uint32_t out_datablock, uint32_t* new_datatable)
+{
+    uint32_t *scratch;
+    create_buffer((void**)&scratch);
+    int r = read_data_block((uint8_t*)scratch, datatable);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    // replace entry with this new value.
+    if(scratch[logical_block] > 0)
+    {
+        free_data_block(scratch[logical_block]);
+    }
+    scratch[logical_block] = out_datablock;
+    // Save
+    r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
+    free(scratch);
+    if(r < 0)
+    {
+        return r;
+    }
+    return 0;
+}
+
+int double_indirect_address_edit(uint32_t logical_block, uint32_t datatable, uint32_t out_datablock, uint32_t* new_datatable)
+{
+    uint32_t row_index = logical_block / POINTERS_PER_BLOCK;
+    uint32_t *scratch;
+    create_buffer((void**)&scratch);
+    int r = read_data_block((uint8_t*)scratch, datatable);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    uint32_t row_datatable = scratch[row_index];
+
+    // update the table
+    uint32_t updated_single_table = 0;
+    r = single_indirect_address_edit(logical_block % POINTERS_PER_BLOCK, row_datatable, out_datablock, &updated_single_table);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    // replace entry with this new value.
+    if(scratch[row_index] > 0)
+    {
+        // free old table.
+        free_data_block(scratch[row_index]);
+    }
+    scratch[row_index] = updated_single_table;
+    // save
+    r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
+    free(scratch);
+    if(r < 0)
+    {
+        return r;
+    }
+    return 0;
+}
+
+int triple_indirect_address_edit(uint32_t logical_block, uint32_t datatable, uint32_t out_datablock, uint32_t* new_datatable)
+{
+
+    uint32_t row_index = logical_block / (POINTERS_PER_BLOCK * POINTERS_PER_BLOCK);
+    uint32_t *scratch;
+    create_buffer((void**)&scratch);
+    int r = read_data_block((uint8_t*)scratch, datatable);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    uint32_t matrix_datatable = scratch[row_index];
+
+    // update the table
+    uint32_t updated_matrix = 0;
+    r = double_indirect_address_edit(logical_block % (POINTERS_PER_BLOCK * POINTERS_PER_BLOCK), matrix_datatable, out_datablock, &updated_matrix);
+    if(r < 0)
+    {
+        free(scratch);
+        return r;
+    }
+    
+    // replace entry with this new value.
+    if(scratch[row_index] > 0)
+    {
+        // free old table.
+        free_data_block(scratch[row_index]);
+    }
+    scratch[row_index] = updated_matrix;
+    // save
+    r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
+    free(scratch);
+    if(r < 0)
+    {
+        return r;
+    }
+    return 0;
+}
+
+
 
 /*
  * inode_get_block_num:
@@ -285,11 +440,14 @@ int inode_free(uint32_t inum) {
  *   Returns 0 if not allocated or negative errno if read error (we return 0
  *   for "no block" and reserve errors for write operations).
  */
-uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block, uint8_t *scratch) {
+uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
     // Direct blocks
     if (logical_block < NUM_DIRECT_BLOCKS) {
         return node->direct_blocks[logical_block];
     }
+
+    uint8_t *scratch;
+    create_buffer((void**)&scratch);
 
     logical_block -= NUM_DIRECT_BLOCKS;
 
@@ -299,10 +457,18 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block, u
     if (logical_block < (uint64_t)POINTERS_PER_BLOCK) {
         uint32_t sb = node->single_indirect;
 
-        if (!sb) return 0;
+        if (!sb)
+        {
+            free(scratch);
+            return 0;
+        }
 
         ret = read_data_block(scratch, sb);
-        if (ret != 0) return ret;
+        if (ret != 0)
+        {
+            free(scratch);
+            return ret;
+        }
 
         uint32_t *ptrs = (uint32_t*)scratch;
 
@@ -317,10 +483,18 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block, u
     if (logical_block < dbl_range) {
         uint32_t db = node->double_indirect;
 
-        if (!db) return 0;
+        if (!db) 
+        {
+            free(scratch);
+            return 0;
+        }
 
         ret = read_data_block(scratch, db);
-        if (ret != 0) return ret;
+        if (ret != 0) 
+        {
+            free(scratch);
+            return ret;
+        }
 
         uint32_t *level1 = (uint32_t*)scratch;
         uint32_t idx1 = (uint32_t)(logical_block / POINTERS_PER_BLOCK);
@@ -329,7 +503,7 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block, u
 
         if (!level1_block) return 0;
 
-        ret = read_data_block(scratch, level1_block);
+        ret = read_data_block((uint8_t*)scratch, level1_block);
         if (ret != 0) return ret;
 
         uint32_t *level0 = (uint32_t*)scratch;
@@ -539,63 +713,6 @@ int inode_set_block_num(uint32_t inum, struct inode *node,
  * ------------------------- */
 
 /*
- * inode_truncate_recursive:
- *   Frees all data blocks (and intermediate pointer blocks) under a pointer block at a given level.
- *
- * Parameters:
- *   - blocknum: physical block number of this pointer block
- *   - level: indirection level (1 = points directly to data blocks)
- *   - blocks_to_free: pointer to a counter of how many data blocks to free
- *   - scratch: temporary buffer (BYTES_PER_BLOCK)
- *
- * Returns:
- *   0 on success, negative errno on error.
- */
-static int inode_truncate_recursive(uint32_t blocknum, uint32_t level,
-                                    uint64_t *blocks_to_free, uint8_t *scratch)
-{
-    if (blocknum == 0 || *blocks_to_free == 0)
-        return 0;  // nothing to do
-
-    int ret = read_data_block(scratch, blocknum);
-    if (ret != 0)
-        return ret;
-
-    uint32_t *ptrs = (uint32_t*)scratch;
-
-    if (level == 1) {
-        // This level points directly to data blocks
-        for (uint32_t i = 0; i < POINTERS_PER_BLOCK && *blocks_to_free > 0; ++i) {
-            if (ptrs[i] != 0) {
-                free_data_block(ptrs[i]);
-
-                ptrs[i] = 0;
-                (*blocks_to_free)--;  // decrement global counter
-            }
-        }
-    } else {
-        // This level points to lower-level pointer blocks
-        for (uint32_t i = 0; i < POINTERS_PER_BLOCK && *blocks_to_free > 0; ++i) {
-            if (ptrs[i] != 0) {
-                // Recursively free all blocks under this subtree
-                ret = inode_truncate_recursive(ptrs[i], level - 1, blocks_to_free, scratch);
-                if (ret != 0) return ret;
-
-                // After all children freed, free this child pointer block
-                free_data_block(ptrs[i]);
-                ptrs[i] = 0;
-            }
-        }
-    }
-
-    // Optionally, write updated pointer block back to disk if you want consistency
-    // write_data_block(scratch, blocknum);
-
-    return 0;
-}
-
-
-/*
  * inode_truncate(inum, newsize)
  *   Supports both grow and shrink.
  *   If shrinking: zeroes tail of last kept block (CoW) and frees later blocks.
@@ -609,7 +726,6 @@ int inode_truncate(uint32_t inum, off_t newsize) {
 int inode_truncate_private(uint32_t inum, off_t newsize) {
     if (newsize < 0) return -EINVAL;
 
-    int ret = 0;
     struct inode node;
     inode_read_from_disk_private(inum, &node);
 
@@ -619,12 +735,7 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
         return 0; 
     }
 
-    uint8_t *scratch;
-    create_buffer((void**)&scratch);
-
-    if (!scratch) { 
-        return -INODE_BUFFER_ALLOCATION_FAILED; 
-    }
+    node.size = newsize;
 
     if (newsize > oldsize) {
         // growing: allocate zero-filled blocks up to newsize (sparse handling allowed)
@@ -632,348 +743,59 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
         node.size = newsize;
         node.mtime = node.ctime = time(NULL);
         inode_write_to_disk_private(inum, &node);
-        free(scratch);
         return 0;
     }
 
-    // shrinking
-    uint64_t keep_bytes = (uint64_t)newsize;
-    uint64_t keep_blocks = (keep_bytes + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK; // ceil
-    uint64_t old_blocks = (oldsize + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
+    // truncate, size decreasing.
 
-    if (keep_blocks == old_blocks) {
-        // file shrunk within the last block -> zero tail bytes in last block (CoW)
-        if (keep_bytes % BYTES_PER_BLOCK == 0) {
-            // exactly on block boundary => nothing to keep in last block
 
-        } else {
-            uint64_t last_logical = (keep_blocks == 0) ? 0 : (keep_blocks - 1);
-            // Read existing last block (if any), zero tail, write to new block (CoW), update pointers
-            uint32_t old_phy = inode_get_block_num(&node, last_logical, scratch);
-            
-            uint8_t *blockbuf = scratch;
-            memset(blockbuf, 0, BYTES_PER_BLOCK);
-
-            if (old_phy != 0) {
-                ret = read_data_block(blockbuf, old_phy);
-
-                if (ret != 0) {
-                    free(scratch);
-                    return ret;
-                }
-            }
-
-            // zero tail
-            uint32_t keep_off = (uint32_t)(keep_bytes % BYTES_PER_BLOCK);
-
-            if (keep_off == 0) keep_off = BYTES_PER_BLOCK; // keep entire block
-
-            if (keep_off < BYTES_PER_BLOCK) {
-                memset(blockbuf + keep_off, 0, BYTES_PER_BLOCK - keep_off);
-            }
-
-            // write new block and update pointer tree
-            uint32_t new_phy = 0;
-
-            ret = write_to_next_free_block(blockbuf, &new_phy);
-
-            if (ret != 0) {
-                free(scratch);
-                return ret;
-            }
-
-            ret = inode_set_block_num(inum, &node, last_logical, new_phy);
-
-            if (ret != 0) {
-                // If inode_set_block_num failed, free the new block we allocated
-                free_data_block(new_phy);
-                free(scratch);
-                return ret;
-            }
-
-            // write inode to persist pointer change
-            node.size = newsize;
-            node.mtime = node.ctime = time(NULL);
-
-            inode_write_to_disk_private(inum, &node);
-            free(scratch);
-            return 0;
+    // All blocks after *newsize* are to be chopped off. 
+    // Go backwards.
+    
+    while(oldsize > newsize) {
+        uint32_t old_physical = inode_get_block_num(&node, oldsize / BYTES_PER_BLOCK);
+        // mark block as free
+        if(old_physical > 0)
+        {
+            free_data_block(old_physical);
         }
-    }
-
-    // General case: free all blocks >= keep_blocks
-    uint64_t to_free_blocks = (old_blocks > keep_blocks) ? (old_blocks - keep_blocks) : 0;
-
-    // 1) If keep_blocks == 0, we must free direct blocks and all indirect trees
-    // For direct blocks: free entries with index >= keep_blocks
-    for (uint64_t i = keep_blocks; i < NUM_DIRECT_BLOCKS && to_free_blocks > 0; ++i) {
-        uint32_t old_phy = node.direct_blocks[i];
-
-        if (old_phy != 0) {
-            free_data_block(old_phy);
-
-            node.direct_blocks[i] = 0;
-            to_free_blocks--;
+        uint32_t logical_block = oldsize / BYTES_PER_BLOCK;
+        // remove logical block from list. Go backwards!
+        if(node.triple_indirect)
+        {
+            uint32_t triple_adjust = logical_block - NUM_DIRECT_BLOCKS - INODES_PER_BLOCK - POINTERS_PER_BLOCK * INODES_PER_BLOCK;
+            uint32_t new_data_table = 0;
+            triple_indirect_address_edit(triple_adjust,node.triple_indirect, 0, &new_data_table);
+            node.triple_indirect = new_data_table;
         }
-    }
-
-    // 2) For single/double/triple indirect, compute how many blocks remain in each region
-    // We'll free subtrees as needed using inode_truncate_recursive.
-
-    // SINGLE
-    if (to_free_blocks > 0) {
-        uint64_t single_total = POINTERS_PER_BLOCK;
-        // which logical blocks correspond to single region start?
-        uint64_t first_single = NUM_DIRECT_BLOCKS;
-
-        if (keep_blocks <= first_single) {
-            // entire single region freed
-            if (node.single_indirect) {
-                uint64_t blocks_sub = to_free_blocks;
-
-                ret = inode_truncate_recursive(node.single_indirect, 1, &blocks_sub, scratch);
-
-                if (ret != 0) {
-                    free(scratch);
-                    return ret;
-                }
-
-                free_data_block(node.single_indirect);
-
-                node.single_indirect = 0;
-
-                // adjust to_free_blocks
-                if (to_free_blocks >= single_total) {
-                    to_free_blocks -= single_total;
-
-                } else {
-                    to_free_blocks = 0;
-                }
-            }
-
-        } else {
-            // partial free: free entries with index >= keep_blocks-first_single
-            uint64_t keep_in_single = (keep_blocks > first_single) ? (keep_blocks - first_single) : 0;
-
-            if (keep_in_single < single_total && node.single_indirect) {
-                // Read pointer block
-                ret = read_data_block(scratch, node.single_indirect);
-
-                if (ret != 0) {
-                    free(scratch);
-                    return ret;
-                }
-
-                uint32_t *ptrs = (uint32_t*)scratch;
-
-                for (uint32_t i = (uint32_t)keep_in_single; i < POINTERS_PER_BLOCK && to_free_blocks > 0; ++i) {
-                    if (ptrs[i]) {
-                        free_data_block(ptrs[i]);
-
-                        ptrs[i] = 0;
-                        to_free_blocks--;
-                    }
-                }
-
-                // write updated pointer block CoW style: write new pointer block and free old
-                uint32_t newptr = 0;
-
-                ret = write_to_next_free_block(scratch, &newptr);
-
-                if (ret != 0) {
-                    free(scratch);
-                    return ret;
-                }
-
-                free_data_block(node.single_indirect);
-                node.single_indirect = newptr;
-            }
+        else if(node.double_indirect)
+        {
+            uint32_t double_adjust = logical_block - NUM_DIRECT_BLOCKS - INODES_PER_BLOCK;
+            uint32_t new_data_table = 0;
+            double_indirect_address_edit(double_adjust,node.double_indirect, 0, &new_data_table);
+            node.double_indirect = new_data_table;
         }
-    }
-
-    // DOUBLE
-    if (to_free_blocks > 0) {
-        uint64_t first_double = NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK;
-        uint64_t double_total = (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
-
-        if (keep_blocks <= first_double) {
-            // free entire double region
-            if (node.double_indirect) {
-                uint64_t blocks_sub = to_free_blocks;
-
-                if (inode_truncate_recursive(node.double_indirect, 2, &blocks_sub, scratch) != 0) {
-                    free(scratch);
-                    return -EIO;
-                }
-
-                free_data_block(node.double_indirect);
-                node.double_indirect = 0;
-                if (to_free_blocks >= double_total) {
-                    to_free_blocks -= double_total;
-
-                } else {
-                    to_free_blocks = 0;
-                }
-            }
-        } else {
-            // partial
-            uint64_t keep_in_double = (keep_blocks > first_double) ? (keep_blocks - first_double) : 0;
-
-            if (keep_in_double < double_total && node.double_indirect) {
-                // iterate over level1 pointers and free children as needed
-                if (read_data_block(scratch, node.double_indirect) != 0) {
-                    free(scratch);
-                    return -EIO;
-                }
-
-                uint32_t *l1 = (uint32_t*)scratch;
-
-                for (uint32_t idx = 0; idx < POINTERS_PER_BLOCK && to_free_blocks > 0; ++idx) {
-                    uint64_t chunk_start = (uint64_t)idx * POINTERS_PER_BLOCK;
-                    uint64_t chunk_end = chunk_start + POINTERS_PER_BLOCK;
-
-                    if (keep_in_double >= chunk_end) continue; // this chunk wholly kept
-
-                    if (l1[idx]) {
-                        // compute how many in this chunk to free
-                        uint64_t keep_here = 0;
-
-                        if (keep_in_double > chunk_start) {
-                            keep_here = keep_in_double - chunk_start;
-                        }
-
-                        uint64_t to_free_here = (uint64_t)POINTERS_PER_BLOCK - keep_here;
-
-                        if (to_free_here > 0) {
-                            uint64_t blocks_sub = to_free_here;
-
-                            if (inode_truncate_recursive(l1[idx], 1, &blocks_sub, scratch) != 0) {
-                                free(scratch);
-                                return -EIO;
-                            }
-
-                            // After freeing children, free the child pointer block
-                            free_data_block(l1[idx]);
-                            l1[idx] = 0;
-                            
-                            if (to_free_blocks >= blocks_sub) {
-                                to_free_blocks -= blocks_sub;
-
-                            } else {
-                                to_free_blocks = 0;
-                            }
-                        }
-                    }
-                }
-
-                // write updated level1 pointer block CoW style
-                uint32_t new_l1 = 0;
-
-                if (write_to_next_free_block(scratch, &new_l1) != 0) {
-                    free(scratch);
-                    return -EIO;
-                }
-
-                free_data_block(node.double_indirect);
-                node.double_indirect = new_l1;
-            }
+        else if(node.single_indirect)
+        {
+            uint32_t single_adjust = logical_block - NUM_DIRECT_BLOCKS - INODES_PER_BLOCK;
+            uint32_t new_data_table = 0;
+            single_indirect_address_edit(single_adjust,node.single_indirect, 0, &new_data_table);
+            node.single_indirect = new_data_table;
         }
-    }
-
-    // TRIPLE
-    if (to_free_blocks > 0) {
-        uint64_t first_triple = NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK + (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
-        uint64_t triple_total = (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
-        
-        if (keep_blocks <= first_triple) {
-            if (node.triple_indirect) {
-                uint64_t blocks_sub = to_free_blocks;
-
-                if (inode_truncate_recursive(node.triple_indirect, 3, &blocks_sub, scratch) != 0) {
-                    free(scratch);
-                    return -EIO;
+        else
+        {  
+            for(int i = NUM_DIRECT_BLOCKS - 1; i < 0; i--)
+            {
+                if(node.direct_blocks[i])
+                {
+                    free_data_block(node.direct_blocks[i]);
+                    node.direct_blocks[i] = 0;
+                    break;
                 }
-
-                free_data_block(node.triple_indirect);
-                node.triple_indirect = 0;
-
-                if (to_free_blocks >= triple_total) {
-                    to_free_blocks -= triple_total;
-                } else {
-                    to_free_blocks = 0;
-                }
-            }
-
-        } else {
-            // partial: similar to double but one more level; implement to free appropriate subtrees.
-            // For brevity and clarity: use a simple approach: iterate triple-level entries and free subtrees whose ranges are > keep.
-            if (node.triple_indirect) {
-                if (read_data_block(scratch, node.triple_indirect) != 0) {
-                    free(scratch);
-                    return -EIO;
-                }
-
-                uint32_t *l2 = (uint32_t*)scratch;
-                uint64_t per_l2 = (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
-                uint64_t keep_in_triple = (keep_blocks > first_triple) ? (keep_blocks - first_triple) : 0;
-
-                for (uint32_t i2 = 0; i2 < POINTERS_PER_BLOCK && to_free_blocks > 0; ++i2) {
-                    uint64_t chunk_start = (uint64_t)i2 * per_l2;
-                    uint64_t chunk_end = chunk_start + per_l2;
-
-                    if (keep_in_triple >= chunk_end) continue; // keep entire chunk
-
-                    if (l2[i2]) {
-                        // compute how many to free in this chunk
-                        uint64_t keep_here = 0;
-
-                        if (keep_in_triple > chunk_start) {
-                            keep_here = keep_in_triple - chunk_start;
-                        }
-
-                        uint64_t to_free_here = per_l2 - keep_here;
-
-                        if (to_free_here > 0) {
-                            uint64_t blocks_sub = to_free_here;
-
-                            if (inode_truncate_recursive(l2[i2], 2, &blocks_sub, scratch) != 0) {
-                                free(scratch);
-                                return -EIO;
-                            }
-
-                            free_data_block(l2[i2]);
-                            l2[i2] = 0;
-
-                            if (to_free_blocks >= blocks_sub) {
-                                to_free_blocks -= blocks_sub;
-
-                            } else {
-                                to_free_blocks = 0;
-                            }
-                        }
-                    }
-                }
-
-                // write updated level2 block CoW style
-                uint32_t new_l2 = 0;
-
-                if (write_to_next_free_block(scratch, &new_l2) != 0) {
-                    free(scratch);
-                    return -EIO;
-                }
-
-                free_data_block(node.triple_indirect);
-                node.triple_indirect = new_l2;
-            }
+            } 
         }
+        oldsize -= BYTES_PER_BLOCK;
     }
-
-    // update size & timestamps
-    node.size = newsize;
-    node.mtime = node.ctime = time(NULL);
-    inode_write_to_disk_private(inum, &node);
-
-    free(scratch);
     return 0;
 }
 
@@ -1023,7 +845,7 @@ static ssize_t inode_read_private(uint32_t inum, void *buf, size_t size, off_t o
 
     while (bytes_left > 0) {
         uint64_t lblock = cur_offset / BYTES_PER_BLOCK;
-        uint32_t phy = inode_get_block_num(&node, lblock, scratch);
+        uint32_t phy = inode_get_block_num(&node, lblock);
         size_t block_off = (size_t)(cur_offset % BYTES_PER_BLOCK);
         size_t to_copy = BYTES_PER_BLOCK - block_off;
 
@@ -1107,7 +929,7 @@ static ssize_t inode_write_private(uint32_t inum, const void *buf, size_t size, 
         }
 
         // Read old block if present
-        uint32_t old_phy = inode_get_block_num(&node, lblock, scratch);
+        uint32_t old_phy = inode_get_block_num(&node, lblock);
 
         if (old_phy != 0) {
             if (read_data_block(scratch, old_phy) != 0) {
@@ -1505,39 +1327,7 @@ int inode_unlink(const char *path) {
     }
 
     // free all blocks and inode
-    uint64_t total_blocks = (node.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
-    // free direct
-    for (uint32_t i = 0; i < NUM_DIRECT_BLOCKS && total_blocks > 0; ++i) {
-        if (node.direct_blocks[i]) { free_data_block(node.direct_blocks[i]); node.direct_blocks[i] = 0; total_blocks--; }
-    }
-    // free single
-    if (node.single_indirect && total_blocks > 0) {
-        uint64_t blocks_sub = total_blocks;
-        inode_truncate_recursive(node.single_indirect, 1, &blocks_sub, NULL);
-        free_data_block(node.single_indirect);
-        node.single_indirect = 0;
-        if (blocks_sub > total_blocks) blocks_sub = total_blocks;
-        total_blocks = (total_blocks > blocks_sub) ? (total_blocks - blocks_sub) : 0;
-    }
-    // free double
-    if (node.double_indirect && total_blocks > 0) {
-        uint64_t blocks_sub = total_blocks;
-        inode_truncate_recursive(node.double_indirect, 2, &blocks_sub, NULL);
-        free_data_block(node.double_indirect);
-        node.double_indirect = 0;
-        if (blocks_sub > total_blocks) blocks_sub = total_blocks;
-        total_blocks = (total_blocks > blocks_sub) ? (total_blocks - blocks_sub) : 0;
-    }
-    // free triple
-    if (node.triple_indirect && total_blocks > 0) {
-        uint64_t blocks_sub = total_blocks;
-        inode_truncate_recursive(node.triple_indirect, 3, &blocks_sub, NULL);
-        free_data_block(node.triple_indirect);
-        node.triple_indirect = 0;
-        if (blocks_sub > total_blocks) blocks_sub = total_blocks;
-        total_blocks = (total_blocks > blocks_sub) ? (total_blocks - blocks_sub) : 0;
-    }
-
+    inode_truncate_private(target,0);
     inode_write_to_disk_private((uint32_t)target, &node);
     inode_unlock((uint32_t)target);
 
@@ -1907,19 +1697,7 @@ int inode_rmdir(const char *path) {
     }
     inode_write_to_disk_private((uint32_t)parent_inum, &parent_node);
 
-    // Free target inode and blocks
-    // Recycled logic from inode_unlink cleanup
-    uint64_t total_blocks = (target_node.size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
-    for (uint32_t i = 0; i < NUM_DIRECT_BLOCKS && total_blocks > 0; ++i) {
-        if (target_node.direct_blocks[i]) { free_data_block(target_node.direct_blocks[i]); total_blocks--; }
-    }
-    // (Simplified: assume small dirs for rmdir, full recursion is in inode_truncate)
-    if (target_node.single_indirect) {
-        uint64_t sub = total_blocks;
-        inode_truncate_recursive(target_node.single_indirect, 1, &sub, NULL);
-        free_data_block(target_node.single_indirect);
-    }
-    
+    // Free target inode and blocks   
     inode_free((uint32_t)target_inum);
 
     free(dup); free(dup2);
@@ -2113,7 +1891,7 @@ int inode_rename(const char *from, const char *to) {
             }
 
             // The "." and ".." entries are created in the first block (logical 0)
-            uint32_t old_phy_blk = inode_get_block_num(&target_node, 0, scratch);
+            uint32_t old_phy_blk = inode_get_block_num(&target_node, 0);
             
             if (old_phy_blk != 0) {
                 // Read the directory data block
