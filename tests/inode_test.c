@@ -7,11 +7,11 @@
 
 uint8_t* buffer;
 
-void create_data()
+void create_data(uint8_t* buf, off_t size)
 {
-    for(unsigned int i = 0; i < BYTES_PER_BLOCK; i++)
+    for(unsigned int i = 0; i < size; i++)
     {
-        buffer[i] = (uint8_t)(i % 256);
+        buf[i] = (uint8_t)(i % 256);
     }
 }
 
@@ -95,7 +95,7 @@ void check_format_inodes()
     struct inode* ilist = (struct inode*)buffer;
     struct inode root = ilist[1]; // root inode is 1
     if(
-        root.mode != S_IFDIR | 0755 ||
+        root.mode != (S_IFDIR | 0755) ||
         root.nlink != 2 ||
         root.size != sizeof(directory_entry) * 3 ||
         root.direct_blocks[0] != 1 ||
@@ -123,7 +123,7 @@ void check_format_inodes()
     // check root data block
     memset(buffer, 0, BYTES_PER_BLOCK);
     int r = read_data_block(buffer, 1);
-    if(!r)
+    if(r < 0)
     {
         fprintf(stderr, "Failed format: Invalid root data block: ret: %d\n", r);
         exit(-1);
@@ -146,6 +146,138 @@ void check_format_inodes()
         trigger_print_directory_entry(dent_list);
         exit(-1);
     }
+}
+
+void check_create_file(uint32_t parent_inum, uint32_t expected_child_inum, const char* path)
+{
+    uint32_t out_inum = 0;
+    int r = inode_create(path, S_IFREG | 0644, &out_inum);
+    if(r < 0)
+    {
+        fprintf(stderr, "Failed create: ret: %d \n",r);
+        exit(-1);
+    }
+
+    if(out_inum != expected_child_inum)
+    {
+        fprintf(stderr, "Failed create (inum not %d): %d \n",expected_child_inum,out_inum);
+        exit(-1);
+    }
+
+    // check if inode is present.
+    // Check Root INODE
+    memset(buffer, 0, BYTES_PER_BLOCK);
+    read_inode_block(buffer, INODE_TABLE_START_BLOCK + expected_child_inum / INODES_PER_BLOCK);
+    struct inode* ilist = (struct inode*)buffer;
+    struct inode new_inode = ilist[expected_child_inum % INODES_PER_BLOCK]; // root inode is 1
+    if(
+        new_inode.mode != (S_IFREG | 0644) ||
+        new_inode.nlink != 1 ||
+        new_inode.size != 0 ||
+        new_inode.direct_blocks[0] != 0 ||
+        new_inode.direct_blocks[1] != 0 ||
+        new_inode.direct_blocks[2] != 0 ||
+        new_inode.direct_blocks[3] != 0 ||
+        new_inode.direct_blocks[4] != 0 ||
+        new_inode.direct_blocks[5] != 0 ||
+        new_inode.direct_blocks[6] != 0 ||
+        new_inode.direct_blocks[7] != 0 ||
+        new_inode.direct_blocks[8] != 0 ||
+        new_inode.direct_blocks[9] != 0 ||
+        new_inode.direct_blocks[10] != 0 ||
+        new_inode.direct_blocks[11] != 0 ||
+        new_inode.single_indirect != 0 ||
+        new_inode.double_indirect != 0 ||
+        new_inode.triple_indirect != 0
+    )
+    {
+        fprintf(stderr, "Failed inode create: Invalid inode for test INODE\n");
+        trigger_print_inode(new_inode);
+        exit(-1);
+    }
+
+    // check root directory root data block
+    memset(buffer, 0, BYTES_PER_BLOCK);
+    read_inode_block(buffer, INODE_TABLE_START_BLOCK + parent_inum / INODES_PER_BLOCK);
+    struct inode* plist = (struct inode*)buffer;
+    struct inode parent_inode = plist[parent_inum % INODES_PER_BLOCK]; // root inode is 1
+    
+    uint8_t* buf2;
+    create_buffer((void**)&buf2);
+
+    memset(buf2, 0, BYTES_PER_BLOCK);
+    r = read_data_block(buf2, parent_inode.direct_blocks[0]);
+    if(r < 0)
+    {
+        fprintf(stderr, "Failed inode create: Invalid data block: ret: %d\n", r);
+        exit(-1);
+    }
+    directory_entry* dent_list = (directory_entry*)buf2;
+    trigger_print_directory_entry(dent_list);
+    free(buf2);
+}
+
+
+void check_truncate(uint32_t inum, off_t size)
+{
+    uint32_t out_inum = 0;
+    int r = inode_truncate(inum, size);
+    if(r < 0)
+    {
+        fprintf(stderr, "Failed truncate: ret: %d \n",r);
+        exit(-1);
+    }
+
+    // check if inode is present.
+    // Check Root INODE
+    memset(buffer, 0, BYTES_PER_BLOCK);
+    read_inode_block(buffer, INODE_TABLE_START_BLOCK + inum / INODES_PER_BLOCK);
+    struct inode* ilist = (struct inode*)buffer;
+    struct inode new_inode = ilist[inum % INODES_PER_BLOCK]; // root inode is 1
+    if(
+        new_inode.mtime == 0  ||
+        new_inode.size != size ||
+        new_inode.direct_blocks[0] != 0 ||
+        new_inode.direct_blocks[1] != 0 ||
+        new_inode.direct_blocks[2] != 0 ||
+        new_inode.direct_blocks[3] != 0 ||
+        new_inode.direct_blocks[4] != 0 ||
+        new_inode.direct_blocks[5] != 0 ||
+        new_inode.direct_blocks[6] != 0 ||
+        new_inode.direct_blocks[7] != 0 ||
+        new_inode.direct_blocks[8] != 0 ||
+        new_inode.direct_blocks[9] != 0 ||
+        new_inode.direct_blocks[10] != 0 ||
+        new_inode.direct_blocks[11] != 0 ||
+        new_inode.single_indirect != 0 ||
+        new_inode.double_indirect != 0 ||
+        new_inode.triple_indirect != 0
+    )
+    {
+        fprintf(stderr, "Failed inode truncate: inode not cleared!\n");
+        trigger_print_inode(new_inode);
+        exit(-1);
+    }
+}
+
+void check_write(uint32_t inum, off_t resulting_size)
+{
+    memset(buffer, 0, BYTES_PER_BLOCK);
+    read_inode_block(buffer, INODE_TABLE_START_BLOCK + inum / INODES_PER_BLOCK);
+    struct inode* ilist = (struct inode*)buffer;
+    struct inode new_inode = ilist[inum % INODES_PER_BLOCK]; // root inode is 1
+    if(
+        new_inode.mtime == 0  ||
+        new_inode.size != resulting_size || 
+        new_inode.direct_blocks[0] <= 1
+    )
+    {
+        fprintf(stderr, "Failed inode write: inode is linking to root!\n");
+        trigger_print_inode(new_inode);
+        exit(-1);
+    }
+    trigger_print_inode(new_inode);
+
 }
 
 int main(int argc, char** argv)
@@ -180,10 +312,62 @@ int main(int argc, char** argv)
     format_super_block();
     format_inodes();
 
+    // check format
     check_format_inodes();
 
+    uint32_t test = 0;
+    write_to_next_free_block(buffer, &test);
+    if(test != 2)
+    {
+        fprintf(stderr, "Next free block not two! Will override root datablock!\n");
+        exit(-1);
+    }
+
+    // verify allocator
+    memset(buffer, 0, BYTES_PER_BLOCK);
+    read_block_raw(buffer, REFERENCE_BASE_BLOCK);
+    if(buffer[0] != 1 || buffer[1] != 1 || buffer[2] != 1)
+    {
+        fprintf(stderr, "Allocator bitmap modified!\n");
+        exit(-1);
+    }
+
+    // create file (inode_create)
+    // assumes short directories.
+    printf("Create file '/tt' \n");
+    check_create_file(1, 2, "/tt");
+    printf("Create file '/tv' \n"); 
+    check_create_file(1, 3, "/tv");
+
+    // truncate file
+    printf("Truncate file '/tt' \n");
+    inode_truncate(2, 0);
+
+    // write to file
+    printf("Write to file '/tt' \n");
+    uint8_t* buffer_data = malloc(BYTES_PER_BLOCK * 17);
+    create_data(buffer_data, BYTES_PER_BLOCK * 17);
+    inode_write(2, buffer_data, BYTES_PER_BLOCK - 100, 0);
+
+    check_write(2, BYTES_PER_BLOCK - 100);
+    
+    printf("Write more to file '/tt' \n");
+    inode_write(2, buffer_data, BYTES_PER_BLOCK * 17, 200); 
+    check_write(2, BYTES_PER_BLOCK * 17 + 200);
 
 
+    printf("Write to file '/tv' \n");
+    inode_write(3, buffer_data, BYTES_PER_BLOCK - 50, 0);
+    check_write(3, BYTES_PER_BLOCK - 50);
+    
+    printf("Write more to file '/tv' \n");
+    inode_write(3, buffer_data, BYTES_PER_BLOCK, BYTES_PER_BLOCK - 50); 
+    check_write(3, BYTES_PER_BLOCK * 2 - 50);
+
+    
+
+
+    printf("PASS\n");
     close_disk();
     free_buffer(buffer);
 
