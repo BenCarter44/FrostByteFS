@@ -338,11 +338,7 @@ int single_indirect_address_edit(uint32_t logical_block, uint32_t datatable, uin
         free(scratch);
         return r;
     }
-    // replace entry with this new value.
-    if(scratch[logical_block] > 0)
-    {
-        free_data_block(scratch[logical_block]);
-    }
+    // freeing is done by the caller. 
     scratch[logical_block] = out_datablock;
     // Save
     r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
@@ -379,7 +375,7 @@ int double_indirect_address_edit(uint32_t logical_block, uint32_t datatable, uin
     if(scratch[row_index] > 0)
     {
         // free old table.
-        free_data_block(scratch[row_index]);
+        assert(free_data_block(scratch[row_index]) == 0);
     }
     scratch[row_index] = updated_single_table;
     // save
@@ -419,7 +415,7 @@ int triple_indirect_address_edit(uint32_t logical_block, uint32_t datatable, uin
     if(scratch[row_index] > 0)
     {
         // free old table.
-        free_data_block(scratch[row_index]);
+        assert(free_data_block(scratch[row_index]) == 0);
     }
     scratch[row_index] = updated_matrix;
     // save
@@ -729,7 +725,7 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
     struct inode node;
     inode_read_from_disk_private(inum, &node);
 
-    uint64_t oldsize = node.size;
+    int64_t oldsize = node.size;
 
     if ((off_t)oldsize == newsize) { 
         return 0; 
@@ -752,51 +748,59 @@ int inode_truncate_private(uint32_t inum, off_t newsize) {
     // All blocks after *newsize* are to be chopped off. 
     // Go backwards.
     
-    while(oldsize > newsize) {
-        uint32_t old_physical = inode_get_block_num(&node, oldsize / BYTES_PER_BLOCK);
+    while(oldsize > (int64_t)newsize) {
+        uint32_t logical_block = oldsize / BYTES_PER_BLOCK;
+        uint32_t old_physical = inode_get_block_num(&node, logical_block);
         // mark block as free
         if(old_physical > 0)
         {
-            free_data_block(old_physical);
+            assert(free_data_block(old_physical) == 0);
         }
-        uint32_t logical_block = oldsize / BYTES_PER_BLOCK;
-        // remove logical block from list. Go backwards!
-        if(node.triple_indirect)
+        // remove logical block from list. Go backwards! 32812
+        if(node.triple_indirect && logical_block >= NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK + POINTERS_PER_BLOCK * INODES_PER_BLOCK)
         {
-            uint32_t triple_adjust = logical_block - NUM_DIRECT_BLOCKS - INODES_PER_BLOCK - POINTERS_PER_BLOCK * INODES_PER_BLOCK;
+            uint32_t triple_adjust = logical_block - NUM_DIRECT_BLOCKS - POINTERS_PER_BLOCK - POINTERS_PER_BLOCK * INODES_PER_BLOCK;
             uint32_t new_data_table = 0;
-            triple_indirect_address_edit(triple_adjust,node.triple_indirect, 0, &new_data_table);
+            assert(triple_indirect_address_edit(triple_adjust,node.triple_indirect, 0, &new_data_table) == 0);
             node.triple_indirect = new_data_table;
         }
-        else if(node.double_indirect)
+        else if(node.double_indirect && logical_block >= NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK)
         {
-            uint32_t double_adjust = logical_block - NUM_DIRECT_BLOCKS - INODES_PER_BLOCK;
+            if(node.triple_indirect)
+            {
+                assert(free_data_block(node.triple_indirect) == 0);
+                node.triple_indirect = 0;
+            }
+            uint32_t double_adjust = logical_block - NUM_DIRECT_BLOCKS - POINTERS_PER_BLOCK;
             uint32_t new_data_table = 0;
-            double_indirect_address_edit(double_adjust,node.double_indirect, 0, &new_data_table);
+            assert(double_indirect_address_edit(double_adjust,node.double_indirect, 0, &new_data_table)  == 0);
             node.double_indirect = new_data_table;
         }
-        else if(node.single_indirect)
+        else if(node.single_indirect && logical_block >= NUM_DIRECT_BLOCKS)
         {
-            uint32_t single_adjust = logical_block - NUM_DIRECT_BLOCKS - INODES_PER_BLOCK;
+            if(node.double_indirect)
+            {
+                assert(free_data_block(node.double_indirect) == 0);
+                node.double_indirect = 0;
+            }
+            uint32_t single_adjust = logical_block - NUM_DIRECT_BLOCKS;
             uint32_t new_data_table = 0;
-            single_indirect_address_edit(single_adjust,node.single_indirect, 0, &new_data_table);
+            assert(single_indirect_address_edit(single_adjust,node.single_indirect, 0, &new_data_table) == 0);
             node.single_indirect = new_data_table;
         }
-        else
+        else if(logical_block < NUM_DIRECT_BLOCKS && node.direct_blocks[logical_block])
         {  
-            for(int i = NUM_DIRECT_BLOCKS - 1; i < 0; i--)
+            if(node.single_indirect)
             {
-                if(node.direct_blocks[i])
-                {
-                    free_data_block(node.direct_blocks[i]);
-                    node.direct_blocks[i] = 0;
-                    break;
-                }
-            } 
+                assert(free_data_block(node.single_indirect) == 0);
+                node.single_indirect = 0;
+            }
+            node.direct_blocks[logical_block] = 0;
         }
         oldsize -= BYTES_PER_BLOCK;
     }
-    return 0;
+        
+    return inode_write_to_disk_private(inum, &node);
 }
 
 
@@ -934,7 +938,6 @@ static ssize_t inode_write_private(uint32_t inum, const void *buf, size_t size, 
         if (old_phy != 0) {
             if (read_data_block(scratch, old_phy) != 0) {
                 free(scratch);
-
                 return -EIO;
             }
 
