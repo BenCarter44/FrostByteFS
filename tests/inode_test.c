@@ -344,41 +344,41 @@ int main(int argc, char** argv)
     check_truncate(2, 0);
 
     // write to file
-    printf("Write to file '/tt' \n");
+    // printf("Write to file '/tt' \n");
     uint8_t* buffer_data = malloc(BYTES_PER_BLOCK * 17);
     create_data(buffer_data, BYTES_PER_BLOCK * 17);
-    inode_write(2, buffer_data, BYTES_PER_BLOCK - 100, 0);
+    // inode_write(2, buffer_data, BYTES_PER_BLOCK - 100, 0);
 
-    check_write(2, BYTES_PER_BLOCK - 100);
+    // check_write(2, BYTES_PER_BLOCK - 100);
     
-    printf("Write more to file '/tt' \n");
+    // printf("Write more to file '/tt' \n");
     
-    for(int i = 0; i < NUM_DIRECT_BLOCKS; i++)
-    {
-        printf("Writing data: %u  / %u \r", i, NUM_DIRECT_BLOCKS);
-        fflush(stdout);
-        inode_write(2, buffer_data, BYTES_PER_BLOCK, 0);
-    }
-    for(int i = 0; i < POINTERS_PER_BLOCK; i++)
-    {
-        printf("Writing data: %u  / %u \r", i, POINTERS_PER_BLOCK);
-        fflush(stdout);
-        inode_write(2, buffer_data, BYTES_PER_BLOCK, NUM_DIRECT_BLOCKS * BYTES_PER_BLOCK);
-    }
-    for(int i = 0; i < POINTERS_PER_BLOCK * POINTERS_PER_BLOCK; i++)
-    {
-        printf("Writing data: %u  / %u \r", i, POINTERS_PER_BLOCK * POINTERS_PER_BLOCK);
-        fflush(stdout);
-        inode_write(2, buffer_data, BYTES_PER_BLOCK, (POINTERS_PER_BLOCK + NUM_DIRECT_BLOCKS) * BYTES_PER_BLOCK);
-    }
-    for(int i = 0; i < 20000; i++)
-    {
-        printf("Writing data: %u  / %u \r", i, 20000);
-        fflush(stdout);
-        inode_write(2, buffer_data, BYTES_PER_BLOCK, (POINTERS_PER_BLOCK + NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK * POINTERS_PER_BLOCK) * BYTES_PER_BLOCK);
-    }
-    printf("\nDone writing...\n");
-    check_write(2, BYTES_PER_BLOCK * (POINTERS_PER_BLOCK + NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK * POINTERS_PER_BLOCK + 20000));
+    // for(int i = 0; i < NUM_DIRECT_BLOCKS; i++)
+    // {
+    //     printf("Writing data: %u  / %u \r", i, NUM_DIRECT_BLOCKS);
+    //     fflush(stdout);
+    //     inode_write(2, buffer_data, BYTES_PER_BLOCK, 0);
+    // }
+    // for(int i = 0; i < POINTERS_PER_BLOCK; i++)
+    // {
+    //     printf("Writing data: %u  / %u \r", i, POINTERS_PER_BLOCK);
+    //     fflush(stdout);
+    //     inode_write(2, buffer_data, BYTES_PER_BLOCK, NUM_DIRECT_BLOCKS * BYTES_PER_BLOCK + i);
+    // }
+    // // for(int i = 0; i < POINTERS_PER_BLOCK * POINTERS_PER_BLOCK; i++)
+    // // {
+    // //     printf("Writing data: %u  / %u \r", i, POINTERS_PER_BLOCK * POINTERS_PER_BLOCK);
+    // //     fflush(stdout);
+    // //     inode_write(2, buffer_data, BYTES_PER_BLOCK, (POINTERS_PER_BLOCK + NUM_DIRECT_BLOCKS) * BYTES_PER_BLOCK);
+    // // }
+    // for(int i = 0; i < 20000; i++)
+    // {
+    //     printf("Writing data: %u  / %u \r", i, 20000);
+    //     fflush(stdout);
+    //     inode_write(2, buffer_data, BYTES_PER_BLOCK, (POINTERS_PER_BLOCK + NUM_DIRECT_BLOCKS) * BYTES_PER_BLOCK);
+    // }
+    // printf("\nDone writing...\n");
+    // check_write(2, BYTES_PER_BLOCK * (POINTERS_PER_BLOCK + NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK * POINTERS_PER_BLOCK + 20000));
 
 
 
@@ -390,8 +390,8 @@ int main(int argc, char** argv)
     inode_write(3, buffer_data, BYTES_PER_BLOCK, BYTES_PER_BLOCK - 50); 
     check_write(3, BYTES_PER_BLOCK * 2 - 50);
 
-    printf("Truncate file '/tt' \n");
-    check_truncate(2, 0);
+    printf("Truncate file '/tv' \n");
+    check_truncate(3, 0);
 
     
 

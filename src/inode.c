@@ -89,9 +89,9 @@ static inline uint64_t u64_pow(uint32_t base, uint32_t exp) {
 }
 
 /* Forward declarations for internal helpers */
-static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
-                                    uint64_t logical_index, uint32_t new_data_block,
-                                    uint8_t *scratch);
+// static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
+//                                     uint64_t logical_index, uint32_t new_data_block,
+//                                     uint8_t *scratch);
 
 static int inode_read_from_disk_private(uint32_t inum, struct inode *out);
 static int inode_write_to_disk_private(uint32_t inum, const struct inode *node);
@@ -447,28 +447,19 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
 
     logical_block -= NUM_DIRECT_BLOCKS;
 
-    int ret = 0;
+    // int ret = 0;
 
     // Single indirect
     if (logical_block < (uint64_t)POINTERS_PER_BLOCK) {
-        uint32_t sb = node->single_indirect;
-
-        if (!sb)
+        if(!node->single_indirect)
         {
             free(scratch);
             return 0;
         }
-
-        ret = read_data_block(scratch, sb);
-        if (ret != 0)
-        {
-            free(scratch);
-            return ret;
-        }
-
-        uint32_t *ptrs = (uint32_t*)scratch;
-
-        return ptrs[logical_block];
+        uint32_t out = 0;
+        single_indirect_address(logical_block, node->single_indirect, &out);
+        free(scratch);
+        return out;
     }
 
     logical_block -= (uint64_t)POINTERS_PER_BLOCK;
@@ -478,32 +469,15 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
 
     if (logical_block < dbl_range) {
         uint32_t db = node->double_indirect;
-
-        if (!db) 
+        if(!db)
         {
             free(scratch);
             return 0;
         }
-
-        ret = read_data_block(scratch, db);
-        if (ret != 0) 
-        {
-            free(scratch);
-            return ret;
-        }
-
-        uint32_t *level1 = (uint32_t*)scratch;
-        uint32_t idx1 = (uint32_t)(logical_block / POINTERS_PER_BLOCK);
-        uint32_t idx2 = (uint32_t)(logical_block % POINTERS_PER_BLOCK);
-        uint32_t level1_block = level1[idx1];
-
-        if (!level1_block) return 0;
-
-        ret = read_data_block((uint8_t*)scratch, level1_block);
-        if (ret != 0) return ret;
-
-        uint32_t *level0 = (uint32_t*)scratch;
-        return level0[idx2];
+        uint32_t out = 0;
+        double_indirect_address(logical_block, node->double_indirect, &out);
+        free(scratch);
+        return out;
     }
 
     logical_block -= dbl_range;
@@ -513,33 +487,15 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
 
     if (logical_block < tpl_range) {
         uint32_t tb = node->triple_indirect;
-        if (!tb) return 0;
-
-        // level 2 block
-        ret = read_data_block(scratch, tb);
-        if (ret != 0) return ret;
-
-        uint32_t *lvl2 = (uint32_t*)scratch;
-        uint64_t per_lvl2 = (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
-        uint32_t i2 = (uint32_t)(logical_block / per_lvl2);
-        uint64_t rem = logical_block % per_lvl2;
-        uint32_t lvl1_block = lvl2[i2];
-        if (!lvl1_block) return 0;
-
-        ret = read_data_block(scratch, lvl1_block);
-        if (ret != 0) return ret;
-
-        uint32_t *lvl1 = (uint32_t*)scratch;
-        uint32_t i1 = (uint32_t)(rem / POINTERS_PER_BLOCK);
-        uint32_t i0 = (uint32_t)(rem % POINTERS_PER_BLOCK);
-        uint32_t lvl0_block = lvl1[i1];
-        if (!lvl0_block) return 0;
-
-        ret = read_data_block(scratch, lvl0_block);
-        if (ret != 0) return ret;
-
-        uint32_t *lvl0 = (uint32_t*)scratch;
-        return lvl0[i0];
+        if(!tb)
+        {
+            free(scratch);
+            return 0;
+        }
+        uint32_t out = 0;
+        triple_indirect_address(logical_block, node->double_indirect, &out);
+        free(scratch);
+        return out;
     }
 
     // Out of supported size
@@ -570,6 +526,7 @@ uint32_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
  *     write_to_next_free_block (CoW).
  *   - Free old pointer-block after successfully writing new one.
  */
+/*
 static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
                                     uint64_t logical_index, uint32_t new_data_block,
                                     uint8_t *scratch)
@@ -620,6 +577,7 @@ static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
 
     return new_blocknum;
 }
+*/
 
 /*
  * inode_set_block_num:
@@ -629,7 +587,7 @@ static uint32_t set_block_recursive(uint32_t old_blocknum, uint32_t level,
  *
  *   Returns 0 on success or negative errno.
  */
-int inode_set_block_num(uint32_t inum, struct inode *node,
+uint32_t inode_set_block_num(uint32_t inum, struct inode *node,
                         uint64_t logical_block, uint32_t new_physical_block)
 {
     uint8_t *scratch;
@@ -657,12 +615,9 @@ int inode_set_block_num(uint32_t inum, struct inode *node,
 
     // single
     if (logical_block < (uint64_t)POINTERS_PER_BLOCK) {
-        uint32_t old_ptr = node->single_indirect;
-        uint32_t new_ptr = set_block_recursive(old_ptr, 1, logical_block, new_physical_block, scratch);
-
-        if (new_ptr <= 0) rc = new_ptr;
-        else node->single_indirect = new_ptr;
-
+        uint32_t new_datatable = 0;
+        single_indirect_address_edit(logical_block, node->single_indirect, new_physical_block, &new_datatable);
+        node->single_indirect = new_datatable;
         free(scratch);
         return rc;
     }
@@ -673,12 +628,9 @@ int inode_set_block_num(uint32_t inum, struct inode *node,
     uint64_t dbl_range = (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
 
     if (logical_block < dbl_range) {
-        uint32_t old_ptr = node->double_indirect;
-        uint32_t new_ptr = set_block_recursive(old_ptr, 2, logical_block, new_physical_block, scratch);
-
-        if (new_ptr <= 0) rc = new_ptr;
-        else node->double_indirect = new_ptr;
-
+        uint32_t new_datatable = 0;
+        double_indirect_address_edit(logical_block, node->double_indirect, new_physical_block, &new_datatable);
+        node->single_indirect = new_datatable;
         free(scratch);
         return rc;
     }
@@ -689,12 +641,9 @@ int inode_set_block_num(uint32_t inum, struct inode *node,
     uint64_t tpl_range = (uint64_t)POINTERS_PER_BLOCK * POINTERS_PER_BLOCK * POINTERS_PER_BLOCK;
 
     if (logical_block < tpl_range) {
-        uint32_t old_ptr = node->triple_indirect;
-        uint32_t new_ptr = set_block_recursive(old_ptr, 3, logical_block, new_physical_block, scratch);
-
-        if (new_ptr <= 0) rc = new_ptr;
-        else node->triple_indirect = new_ptr;
-
+        uint32_t new_datatable = 0;
+        triple_indirect_address_edit(logical_block, node->triple_indirect, new_physical_block, &new_datatable);
+        node->single_indirect = new_datatable;
         free(scratch);
         return rc;
     }
