@@ -64,6 +64,8 @@ int main(int argc, char** argv)
     create_buffer((void**)&buffer);
     clear_buffer();
 
+    init_allocator();
+
     // check if disk formatted.
     bool val = allocator_check_valid_super_block();
     // put other checks here for the upper layers.

@@ -5,6 +5,11 @@
 
 pthread_mutex_t* allocator_lock;
 
+void init_allocator()
+{
+    pthread_mutex_init(allocator_lock, NULL);
+}
+
 // private: do static here:
 static int increment_reference(int8_t value, uint32_t reference_number);
 
@@ -247,8 +252,6 @@ int format_super_block()
 
 bool allocator_check_valid_super_block()
 {
-    pthread_mutex_init(allocator_lock, NULL); 
-
     uint8_t* buffer;
     create_buffer((void**)&buffer);
     int r = read_block_raw(buffer, SUPER_BLOCK);

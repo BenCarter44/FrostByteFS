@@ -304,7 +304,8 @@ int main(int argc, char** argv)
     create_buffer((void**)&buffer);
     clear_buffer();
 
-
+    init_allocator();
+    
     // format disk
     printf("Formatting...\n");
     clear_ref_blocks();

@@ -47,6 +47,8 @@
 // functions to access individual layers.
 int get_super_block(uint8_t* buffer);
 
+void init_allocator();
+
 
 // public: for data blocks: COPY ON WRITE
 int write_to_next_free_block(const uint8_t* buffer, uint32_t* block_number);
