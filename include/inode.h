@@ -28,6 +28,7 @@
 #define NUM_DIRECT_BLOCKS 12
 #define POINTERS_PER_BLOCK (BYTES_PER_BLOCK / sizeof(uint32_t))
 
+
 struct inode {
     mode_t mode;        // 4 bytes
     uid_t uid;          // 4 bytes
@@ -49,6 +50,14 @@ struct inode {
 #define _FILE_OFFSET_BITS 64
 
 #define MAX_FILENAME_LEN 255
+
+// Directory entry stored in a directory data block.
+// Keep size fixed to pack nicely into BYTES_PER_BLOCK.
+typedef struct directory_entry {
+    uint32_t inum;
+    char name[MAX_FILENAME_LEN + 1];
+    int is_valid;
+} directory_entry;
 
 
 // --- iNode Layer API ---

@@ -27,13 +27,6 @@
 #error "MAX_FILENAME_LEN must be defined in inode.h"
 #endif
 
-// Directory entry stored in a directory data block.
-// Keep size fixed to pack nicely into BYTES_PER_BLOCK.
-typedef struct directory_entry {
-    uint32_t inum;
-    char name[MAX_FILENAME_LEN + 1];
-    int is_valid;
-} directory_entry;
 
 // Global per-inode locking structure. Must be initialized at mount time.
 static pthread_mutex_t *inode_locks = NULL;
