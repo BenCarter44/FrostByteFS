@@ -1666,19 +1666,19 @@ int format_inodes() {
     memset(buf, 0, BYTES_PER_BLOCK);
 
     for (uint32_t b = 0; b < INODE_BITMAP_BLOCKS; ++b) {
-        if (write_inode_block(buf, INODE_TABLE_START_BLOCK + b) != 0) {
+        if (write_inode_block(buf, b) != 0) {
             free(buf); 
             return -EIO;
         }
     }
 
     // allocate inode 0 by setting bit 0
-    ((uint8_t*)buf)[0] |= 1u;
+    // ((uint8_t*)buf)[0] |= 1u;
 
-    if (write_inode_block(buf, INODE_TABLE_START_BLOCK) != 0) { 
-        free(buf); 
-        return -EIO; 
-    }
+    // if (write_inode_block(buf, 0) != 0) { 
+    //     free(buf); 
+    //     return -EIO; 
+    // }
 
     // create root inode structure
 
@@ -1736,6 +1736,7 @@ int format_inodes() {
 
     // write inode
     root.direct_blocks[0] = datablock_number;
+    root.size = sizeof(directory_entry) * 3;
     inode_write_to_disk_private(return_root_inode(), &root);
     free(scratch);
     free(buf);

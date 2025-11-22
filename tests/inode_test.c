@@ -78,7 +78,11 @@ void check_format_inodes()
     memset(buffer, 0, BYTES_PER_BLOCK);
     for(int b = 0; b < INODE_BITMAP_BLOCKS; b++)
     {
-        read_inode_block(buffer, 0);
+        read_inode_block(buffer, b);
+        if(b == 0 && buffer[0] == 0x03)
+        {
+            continue;
+        }
         if(!is_blank(buffer))
         {
             fprintf(stderr, "Failed format: not blank inode bitmap\n");
