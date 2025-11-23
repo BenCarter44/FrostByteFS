@@ -26,7 +26,8 @@
 #include "error.h"
 
 // Uncomment below to use the kernel caching on reads/writes.
-// #define USE_KERNEL_CACHE   
+#define USE_KERNEL_CACHE   
+#define FSYNC_CYCLES 500000
 
 #define DISK_SIZE_IN_BLOCKS 13107200
 #define BYTES_PER_BLOCK 4096
@@ -40,6 +41,7 @@ int close_disk();
 int read_block_raw(uint8_t* buffer, uint32_t block_number);
 int write_block_raw(const uint8_t* buffer, uint32_t block_number);
 
+int fsync_disk();
 
 
 #endif

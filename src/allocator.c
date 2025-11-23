@@ -7,7 +7,15 @@ pthread_mutex_t* allocator_lock;
 
 void init_allocator()
 {
+    allocator_lock = calloc(1, sizeof(pthread_mutex_t));
     pthread_mutex_init(allocator_lock, NULL);
+}
+
+static uint32_t speed_free = 0;
+
+void gdb_break_alloc()
+{
+    return;
 }
 
 // private: do static here:
@@ -78,7 +86,9 @@ int read_inode_block(uint8_t* buffer, uint32_t reference_block_number)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
     }
+    pthread_mutex_lock(allocator_lock);
     int ret = read_block_raw(buffer, INODE_BASE_BLOCK + reference_block_number);
+    pthread_mutex_unlock(allocator_lock);
     if(ret < 0)
     {
         return ret;
@@ -88,11 +98,23 @@ int read_inode_block(uint8_t* buffer, uint32_t reference_block_number)
 
 int write_inode_block(const uint8_t* buffer, uint32_t reference_block_number)
 {
+    pthread_mutex_lock(allocator_lock);
+    if(reference_block_number == 0)
+    {
+        bool trigger = true;
+        for(int i = 128; i < 256; i++)
+        {
+            if(buffer[i] != 0) { trigger = false; break; }
+        }
+        if(trigger) { gdb_break_alloc(); }
+    }
     if(reference_block_number >= INODE_BLOCKS * BYTES_PER_BLOCK)
     {
+        pthread_mutex_unlock(allocator_lock);
         return -ALLOCATOR_OUT_OF_BOUNDS;
     }
     int ret = write_block_raw(buffer, INODE_BASE_BLOCK + reference_block_number);
+    pthread_mutex_unlock(allocator_lock);
     if(ret < 0)
     {
         return ret;
@@ -139,8 +161,13 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
 }
 
 // Mark data block as free. 
+
 int free_data_block(uint32_t block_number)
 {
+    if(block_number == 1)
+    {
+        gdb_break_alloc();
+    }
     // check if in use!
     pthread_mutex_lock(allocator_lock);
     uint8_t* buffer;
@@ -153,6 +180,11 @@ int free_data_block(uint32_t block_number)
     {
         // good. overwrite buffer
         buffer[block_number % BYTES_PER_BLOCK] -= 1;
+        if(buffer[block_number % BYTES_PER_BLOCK] == 0 && speed_free > block_number)
+        {
+            // now free!
+            speed_free = block_number;
+        }
         int r = write_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
         free_buffer(buffer);
         pthread_mutex_unlock(allocator_lock);
@@ -171,8 +203,8 @@ static int search_for_next_free_block(uint32_t* block_number)
     // later.... I can cache this.
     uint8_t* buffer;
     create_buffer((void**)&buffer);
-
-    for(uint32_t block_index = 0; block_index < REF_BLOCKS; block_index++)
+    bool first_time = true;
+    for(uint32_t block_index = speed_free / BYTES_PER_BLOCK; block_index < REF_BLOCKS; block_index++)
     {
         int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + block_index);
         if(ret < 0)
@@ -180,13 +212,20 @@ static int search_for_next_free_block(uint32_t* block_number)
             free_buffer(buffer);
             return ret;
         }
-        for(uint32_t byte_index = 0; byte_index < BYTES_PER_BLOCK; byte_index++)
+        uint32_t start = 0;
+        if(first_time)
+        {
+            start = speed_free % BYTES_PER_BLOCK;
+            first_time = false;
+        }
+        for(uint32_t byte_index = start; byte_index < BYTES_PER_BLOCK; byte_index++)
         {
             uint8_t ref_count = buffer[byte_index];
             if(ref_count == 0) // 254 is full. 255 is invalid
             {
                 // is free! 
                 *(block_number) = byte_index + block_index * BYTES_PER_BLOCK;
+                speed_free = *(block_number);
                 free_buffer(buffer);
                 return 0;
             }
