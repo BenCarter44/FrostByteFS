@@ -168,6 +168,11 @@ int free_data_block(uint64_t block_number)
     {
         gdb_break_alloc();
     }
+    if(block_number == 0)
+    {
+        // ignore. 0 block is null block.
+        return 0;
+    }
     // check if in use!
     pthread_mutex_lock(allocator_lock);
     uint8_t* buffer;

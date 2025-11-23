@@ -39,7 +39,7 @@ struct inode {
     time_t mtime;       // 8 bytes
     time_t ctime;       // 8 bytes
 
-    uint64_t direct_blocks[NUM_DIRECT_BLOCKS]; // 48 bytes
+    uint64_t direct_blocks[NUM_DIRECT_BLOCKS]; // 40 bytes
     uint64_t single_indirect;  // 8 bytes
     uint64_t double_indirect;  // 8 bytes
     uint64_t triple_indirect;  // 8 bytes

@@ -338,7 +338,11 @@ int single_indirect_address_edit(uint64_t logical_block, uint64_t datatable, uin
         free(scratch);
         return r;
     }
-    // freeing is done by the caller. 
+    if(scratch[logical_block] > 0)
+    {
+        // free old data block.
+        assert(free_data_block(scratch[logical_block]) == 0);
+    }
     scratch[logical_block] = out_datablock;
     // Save
     r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
@@ -699,13 +703,8 @@ int inode_truncate_private(uint64_t inum, off_t newsize) {
     
     while(oldsize > (int64_t)newsize) {
         uint64_t logical_block = oldsize / BYTES_PER_BLOCK;
-        uint64_t old_physical = inode_get_block_num(&node, logical_block);
-        // mark block as free
-        if(old_physical > 0)
-        {
-            assert(free_data_block(old_physical) == 0);
-        }
-        // remove logical block from list. Go backwards! 32812
+
+        // remove logical block from list (auto frees block). Go backwards! 32812
         if(node.triple_indirect && logical_block >= NUM_DIRECT_BLOCKS + POINTERS_PER_BLOCK + POINTERS_PER_BLOCK * INODES_PER_BLOCK)
         {
             uint64_t triple_adjust = logical_block - NUM_DIRECT_BLOCKS - POINTERS_PER_BLOCK - POINTERS_PER_BLOCK * INODES_PER_BLOCK;
@@ -743,6 +742,10 @@ int inode_truncate_private(uint64_t inum, off_t newsize) {
             {
                 assert(free_data_block(node.single_indirect) == 0);
                 node.single_indirect = 0;
+            }
+            if(node.direct_blocks[logical_block])
+            {
+                assert(free_data_block(node.direct_blocks[logical_block]) == 0);
             }
             node.direct_blocks[logical_block] = 0;
         }
