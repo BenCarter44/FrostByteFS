@@ -213,14 +213,15 @@ int frostbyte_unlink(const char* path)
 
 int frostbyte_rename(const char* path_old, const char* path_new, unsigned int flags) 
 {
-    int inode = 0;
-    inode = inode_find_by_path(path_old);
-    if (inode < 0) {
-        return inode;
-    }
+    // int inode = 0;
+    // inode = inode_find_by_path(path_old);
+    // if (inode < 0) {
+    //     return inode;
+    // }
     
     printf("frostbyte_rename(old=\"%s\", new=\"%s\", flags=%u)\n",
         path_old, path_new, flags);
+        
     return inode_rename(path_old, path_new);
 
     // return 0;
@@ -551,4 +552,63 @@ ssize_t frostbyte_copy_file_range(const char *path_in,
     print_fuse_info(fi_in);
     print_fuse_info(fi_out);
     return r;
+}
+
+
+int frostbyte_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
+    // struct inode node;
+    // uint32_t inum;
+
+    // int inum = inode_find_by_path(path);
+    // if (inum < 0) return inum;
+
+    // uint8_t* buffer = (uint8_t*)malloc(size);
+
+    // int r = inode_read(inum, buffer, size, offset_in);
+    // if(r < 0)
+    // {
+    //     free(buffer);
+    //     return r;
+    // }
+
+    // node.atime = tv[0].tv_sec;
+    // node.mtime = tv[1].tv_sec;
+
+    // node.ctime = time(NULL);
+
+    // r = inode_write(inum, buffer, size, offset_out);
+    // if(r < 0)
+    // {
+    //     free(buffer);
+    //     return r;
+    // }
+    // free(buffer);
+
+    return 0;
+}
+
+
+// fusespecial.c
+
+int frostbyte_link(const char* oldpath, const char* newpath)
+{
+    printf("L3 (FUSE): frostbyte_link(old='%s', new='%s')\n", oldpath, newpath);
+
+    int inum = inode_find_by_path(oldpath);
+
+    if (inum < 0) {
+        return (int)inum;
+    }
+
+    // 2. Check if it is a directory (Hard links to dirs are usually forbidden)
+    struct inode node;
+
+    if (inode_read_from_disk((uint64_t)inum, &node) == 0) {
+        if (S_ISDIR(node.mode)) {
+            return -EPERM; 
+        }
+    }
+
+    // 3. link
+    return inode_link((uint64_t)inum, newpath);
 }

@@ -55,5 +55,8 @@ ssize_t frostbyte_copy_file_range(const char *path_in,
                 off_t offset_out, size_t size, int flags);
 
 
+int frostbyte_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi);
+int frostbyte_link(const char* oldpath, const char* newpath);
+
 void print_fuse_info(struct fuse_file_info* finfo);
 #endif
