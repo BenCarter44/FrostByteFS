@@ -6,7 +6,7 @@ static char* disk_name = NULL;
 static int disk_fd = 0;
 
 #ifdef USE_KERNEL_CACHE
-static uint32_t changes = 0;
+static uint64_t changes = 0;
 #endif
 
 int create_buffer(void** buffer)
@@ -76,7 +76,7 @@ int close_disk()
     return 0;
 }
 
-int read_block_raw(uint8_t* buffer, uint32_t block_number)
+int read_block_raw(uint8_t* buffer, uint64_t block_number)
 {
     if(disk_name == NULL)
     {
@@ -96,7 +96,7 @@ int read_block_raw(uint8_t* buffer, uint32_t block_number)
     return 0;
 }
 
-int write_block_raw(const uint8_t* buffer, uint32_t block_number)
+int write_block_raw(const uint8_t* buffer, uint64_t block_number)
 {
     if(disk_name == NULL)
     {

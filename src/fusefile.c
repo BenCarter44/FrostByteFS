@@ -148,7 +148,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
         return -r;
     }
 
-    uint32_t inode = 0;
+    uint64_t inode = 0;
     
     // Is it a new file?
     r = inode_find_by_path(path);
@@ -180,7 +180,7 @@ int frostbyte_open(const char* path, struct fuse_file_info* finfo)
             errno = EEXIST;
             return -EEXIST;
         }
-        inode = (uint32_t)r;
+        inode = (uint64_t)r;
         finfo->fh = (uint64_t)inode;
     }
 
@@ -411,7 +411,7 @@ int frostbyte_removexattr(const char* path, const char* key)
 
 // int frostbyte_check_access(const char* path, int perm) 
 // {
-//     uint32_t inode = 0;
+//     uint64_t inode = 0;
 //     int r = get_inode_from_path(path, &inode);
 //     if(r == -FILE_NOT_FOUND)
 //     {
@@ -487,8 +487,8 @@ int frostbyte_write(const char* path, const char* buffer, size_t len, off_t offs
 
 // int frostbyte_map_raw(const char* path, size_t blocksize, uint64_t *idx) 
 // {
-//     uint32_t inode = 0;
-//     uint32_t previous = 0;
+//     uint64_t inode = 0;
+//     uint64_t previous = 0;
 //     int r = get_inode_from_path(path, &inode, &previous);
 //     if(r == -FILE_NOT_FOUND)
 //     {

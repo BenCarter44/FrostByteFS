@@ -148,9 +148,9 @@ void check_format_inodes()
     }
 }
 
-void check_create_file(uint32_t parent_inum, uint32_t expected_child_inum, const char* path)
+void check_create_file(uint64_t parent_inum, uint64_t expected_child_inum, const char* path)
 {
-    uint32_t out_inum = 0;
+    uint64_t out_inum = 0;
     int r = inode_create(path, S_IFREG | 0644, &out_inum);
     if(r < 0)
     {
@@ -218,9 +218,9 @@ void check_create_file(uint32_t parent_inum, uint32_t expected_child_inum, const
 }
 
 
-void check_truncate(uint32_t inum, off_t size)
+void check_truncate(uint64_t inum, off_t size)
 {
-    uint32_t out_inum = 0;
+    uint64_t out_inum = 0;
     int r = inode_truncate(inum, size);
     if(r < 0)
     {
@@ -260,7 +260,7 @@ void check_truncate(uint32_t inum, off_t size)
     }
 }
 
-void check_write(uint32_t inum, off_t resulting_size)
+void check_write(uint64_t inum, off_t resulting_size)
 {
     memset(buffer, 0, BYTES_PER_BLOCK);
     read_inode_block(buffer, INODE_TABLE_START_BLOCK + inum / INODES_PER_BLOCK);
@@ -316,7 +316,7 @@ int main(int argc, char** argv)
     // check format
     check_format_inodes();
 
-    uint32_t test = 0;
+    uint64_t test = 0;
     write_to_next_free_block(buffer, &test);
     if(test != 2)
     {

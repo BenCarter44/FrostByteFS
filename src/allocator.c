@@ -11,7 +11,7 @@ void init_allocator()
     pthread_mutex_init(allocator_lock, NULL);
 }
 
-static uint32_t speed_free = 0;
+static uint64_t speed_free = 0;
 
 void gdb_break_alloc()
 {
@@ -19,12 +19,12 @@ void gdb_break_alloc()
 }
 
 // private: do static here:
-static int increment_reference(int8_t value, uint32_t reference_number);
+static int increment_reference(int8_t value, uint64_t reference_number);
 
-static int fetch_data_block(uint8_t* buffer, uint32_t reference_block_number);
-static int write_data_block(const uint8_t* buffer, uint32_t reference_block_number);
+static int fetch_data_block(uint8_t* buffer, uint64_t reference_block_number);
+static int write_data_block(const uint8_t* buffer, uint64_t reference_block_number);
 
-int increment_reference(int8_t value, uint32_t reference_number)
+int increment_reference(int8_t value, uint64_t reference_number)
 {
     if(reference_number >= REF_BLOCKS * BYTES_PER_BLOCK)
     {
@@ -34,7 +34,7 @@ int increment_reference(int8_t value, uint32_t reference_number)
     uint8_t* buffer;
     create_buffer((void**)&buffer);
 
-    uint32_t index = reference_number / BYTES_PER_BLOCK;
+    uint64_t index = reference_number / BYTES_PER_BLOCK;
     int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     if(ret < 0)
     {   
@@ -51,7 +51,7 @@ int increment_reference(int8_t value, uint32_t reference_number)
     return 0;
 }
 
-int fetch_data_block(uint8_t* buffer, uint32_t reference_block_number)
+int fetch_data_block(uint8_t* buffer, uint64_t reference_block_number)
 {
     if(reference_block_number >= DATA_BLOCKS * BYTES_PER_BLOCK)
     {
@@ -65,7 +65,7 @@ int fetch_data_block(uint8_t* buffer, uint32_t reference_block_number)
     return 0;
 }
 
-int write_data_block(const uint8_t* buffer, uint32_t reference_block_number)
+int write_data_block(const uint8_t* buffer, uint64_t reference_block_number)
 {
     if(reference_block_number >= DATA_BLOCKS * BYTES_PER_BLOCK)
     {
@@ -80,7 +80,7 @@ int write_data_block(const uint8_t* buffer, uint32_t reference_block_number)
 }
 
 // passthrough INODE blocks.
-int read_inode_block(uint8_t* buffer, uint32_t reference_block_number)
+int read_inode_block(uint8_t* buffer, uint64_t reference_block_number)
 {
     if(reference_block_number >= INODE_BLOCKS * BYTES_PER_BLOCK)
     {
@@ -96,7 +96,7 @@ int read_inode_block(uint8_t* buffer, uint32_t reference_block_number)
     return 0;
 }
 
-int write_inode_block(const uint8_t* buffer, uint32_t reference_block_number)
+int write_inode_block(const uint8_t* buffer, uint64_t reference_block_number)
 {
     pthread_mutex_lock(allocator_lock);
     if(reference_block_number == 0)
@@ -132,7 +132,7 @@ int get_super_block(uint8_t* buffer)
 }
 
 // Read given data block.
-int read_data_block(uint8_t* buffer, uint32_t block_number)
+int read_data_block(uint8_t* buffer, uint64_t block_number)
 {
     if(block_number == 0)
     {
@@ -141,7 +141,7 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
     }
     pthread_mutex_lock(allocator_lock);
     // check if in use!
-    uint32_t index = block_number / BYTES_PER_BLOCK;
+    uint64_t index = block_number / BYTES_PER_BLOCK;
     read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     uint8_t value = buffer[block_number % BYTES_PER_BLOCK];
     if(value > 0 && value != REF_IS_NON_EXISTANT)
@@ -162,7 +162,7 @@ int read_data_block(uint8_t* buffer, uint32_t block_number)
 
 // Mark data block as free. 
 
-int free_data_block(uint32_t block_number)
+int free_data_block(uint64_t block_number)
 {
     if(block_number == 1)
     {
@@ -173,7 +173,7 @@ int free_data_block(uint32_t block_number)
     uint8_t* buffer;
     create_buffer((void**)&buffer);
 
-    uint32_t index = block_number / BYTES_PER_BLOCK;
+    uint64_t index = block_number / BYTES_PER_BLOCK;
     read_block_raw(buffer, REFERENCE_BASE_BLOCK + index);
     uint8_t value = buffer[block_number % BYTES_PER_BLOCK];
     if(value > 0 && value != REF_IS_NON_EXISTANT)
@@ -196,7 +196,7 @@ int free_data_block(uint32_t block_number)
 }
 
 
-static int search_for_next_free_block(uint32_t* block_number)
+static int search_for_next_free_block(uint64_t* block_number)
 {
     // slow simple way....
     // scan entire reference list to find the first 0.
@@ -204,7 +204,7 @@ static int search_for_next_free_block(uint32_t* block_number)
     uint8_t* buffer;
     create_buffer((void**)&buffer);
     bool first_time = true;
-    for(uint32_t block_index = speed_free / BYTES_PER_BLOCK; block_index < REF_BLOCKS; block_index++)
+    for(uint64_t block_index = speed_free / BYTES_PER_BLOCK; block_index < REF_BLOCKS; block_index++)
     {
         int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + block_index);
         if(ret < 0)
@@ -212,13 +212,13 @@ static int search_for_next_free_block(uint32_t* block_number)
             free_buffer(buffer);
             return ret;
         }
-        uint32_t start = 0;
+        uint64_t start = 0;
         if(first_time)
         {
             start = speed_free % BYTES_PER_BLOCK;
             first_time = false;
         }
-        for(uint32_t byte_index = start; byte_index < BYTES_PER_BLOCK; byte_index++)
+        for(uint64_t byte_index = start; byte_index < BYTES_PER_BLOCK; byte_index++)
         {
             uint8_t ref_count = buffer[byte_index];
             if(ref_count == 0) // 254 is full. 255 is invalid
@@ -238,7 +238,7 @@ static int search_for_next_free_block(uint32_t* block_number)
 
 // Copy on write.... write to next free block
 // ASSUMES NO INTERRUPTIONS.... ATOMIC!
-int write_to_next_free_block(const uint8_t* buffer, uint32_t* block_number)
+int write_to_next_free_block(const uint8_t* buffer, uint64_t* block_number)
 {
     // requires atomic operations!
     pthread_mutex_lock(allocator_lock);
@@ -309,7 +309,7 @@ int clear_ref_blocks()
     uint8_t* buffer;
     create_buffer((void**)&buffer);
     clear_buffer(buffer);
-    for(uint32_t i = 0; i < REF_BLOCKS; i++)
+    for(uint64_t i = 0; i < REF_BLOCKS; i++)
     {
         printf("Ref block: %u / %u   \r", i, REF_BLOCKS);
         fflush(stdout);
@@ -326,7 +326,7 @@ int clear_ref_blocks()
     // three overflow.
 
     // set buffer to all 255
-    for(uint32_t i = 0; i < BYTES_PER_BLOCK; i++)
+    for(uint64_t i = 0; i < BYTES_PER_BLOCK; i++)
     {
         buffer[BYTES_PER_BLOCK - i - 1] = REF_IS_NON_EXISTANT;
     }
@@ -344,7 +344,7 @@ int clear_ref_blocks()
     }
     
     clear_buffer(buffer);
-    for(uint32_t i = 0; i < overflow; i++)
+    for(uint64_t i = 0; i < overflow; i++)
     {
         buffer[BYTES_PER_BLOCK - i - 1] = REF_IS_NON_EXISTANT;
     }
@@ -358,7 +358,7 @@ int clear_inode_blocks()
     uint8_t* buffer;
     create_buffer((void**)&buffer);
     clear_buffer(buffer);
-    for(uint32_t i = 0; i < INODE_BLOCKS; i++)
+    for(uint64_t i = 0; i < INODE_BLOCKS; i++)
     {
         printf("INode Block: %u  / %u \r", i, INODE_BLOCKS);
         fflush(stdout);
