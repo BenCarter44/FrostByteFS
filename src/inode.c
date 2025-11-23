@@ -351,6 +351,13 @@ int single_indirect_address_edit(uint64_t logical_block, uint64_t datatable, uin
     {
         return r;
     }
+
+    // free former data table.
+    if(datatable)
+    {
+        assert(free_data_block(datatable) == 0);
+    }
+
     return 0;
 }
 
@@ -388,6 +395,12 @@ int double_indirect_address_edit(uint64_t logical_block, uint64_t datatable, uin
     if(r < 0)
     {
         return r;
+    }
+
+    // free former data table.
+    if(datatable)
+    {
+        assert(free_data_block(datatable) == 0);
     }
     return 0;
 }
@@ -428,6 +441,12 @@ int triple_indirect_address_edit(uint64_t logical_block, uint64_t datatable, uin
     if(r < 0)
     {
         return r;
+    }
+    
+    // free former data table.
+    if(datatable)
+    {
+        assert(free_data_block(datatable) == 0);
     }
     return 0;
 }
