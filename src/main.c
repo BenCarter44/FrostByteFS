@@ -122,7 +122,10 @@ const struct fuse_operations frost_oper = {
     .write        = frostbyte_write,
     // .bmap    = frostbyte_map_raw,
     // .fallocate     = frostbyte_allocate,
-    .copy_file_range = frostbyte_copy_file_range
+    .copy_file_range = frostbyte_copy_file_range,
+    .utimens = frostbyte_utimens,
+    .link = frostbyte_link
+
 };
 
 

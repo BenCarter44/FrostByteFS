@@ -1016,7 +1016,7 @@ int inode_add_dirent(uint64_t parent_inum, directory_entry* entry) {
     list[index].inum = 0;
     list[index].is_valid = 0;
     index++;
-    inode_truncate_private(parent_inum, 0);
+    // inode_truncate_private(parent_inum, 0);
     inode_write_private(parent_inum, (void*)list, index * sizeof(directory_entry), 0);
     
     free(scratch);
@@ -1055,12 +1055,15 @@ int inode_remove_dirent(uint64_t parent_inum, directory_entry* entry) {
 
     uint64_t new_list_index = 0;
 
+    int is_found = 0;
+
     uint64_t index = 0;
     while(list[index].is_valid == 1)
     {
         if(list[index].inum == entry->inum && strncmp(list[index].name, entry->name, MAX_FILENAME_LEN) == 0)
         {
             // found! Remove!
+            is_found = 1;
         }
         else
         {
@@ -1074,11 +1077,14 @@ int inode_remove_dirent(uint64_t parent_inum, directory_entry* entry) {
     new_list[new_list_index].inum = 0;
     new_list[new_list_index].is_valid = 0;
     new_list_index++;
-    inode_truncate_private(parent_inum, 0);
+    // inode_truncate_private(parent_inum, 0);
     inode_write_private(parent_inum, (void*)new_list, new_list_index * sizeof(directory_entry), 0);
     
     free(scratch);
-    return -ENOENT;
+    free(new_list);
+
+    if (is_found == 1) return 0;
+    else return -ENOENT;
 }
 
 /* -------------------------
@@ -1279,7 +1285,7 @@ int inode_unlink(const char *path) {
     }
 
     // free all blocks and inode
-    inode_truncate_private(target,0);
+    // inode_truncate_private(target,0);
     inode_write_to_disk_private((uint64_t)target, &node);
     inode_unlock((uint64_t)target);
 
@@ -1640,7 +1646,7 @@ int inode_rmdir(const char *path) {
     }
 
     // Decrement parent nlink (removing ".." from child)
-    inode_lock((uint64_t)parent_inum);
+    // inode_lock((uint64_t)parent_inum);
     struct inode parent_node;
     inode_read_from_disk_private((uint64_t)parent_inum, &parent_node);
     if (parent_node.nlink > 2)
@@ -1665,254 +1671,235 @@ int inode_rmdir(const char *path) {
  * 2. Prevents moving a directory into its own subdirectory.
  * 3. Handles nlink updates for parents.
  */
+// Helper: Comparator for qsort (Updated to uint64_t)
+static int cmp_u64(const void *a, const void *b) {
+    uint64_t va = *(const uint64_t*)a;
+    uint64_t vb = *(const uint64_t*)b;
+    if (va < vb) return -1;
+    if (va > vb) return 1;
+    return 0;
+}
+
+// Helper: Lock unique inums sorted (Updated to uint64_t)
+static uint32_t lock_inums_sorted(uint64_t *inums, uint32_t count) {
+    if (!inums || count == 0) return 0;
+    qsort(inums, count, sizeof(uint64_t), cmp_u64);
+    
+    uint32_t write = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        // Skip 0 (invalid inode) and duplicates
+        if (inums[i] == 0) continue; 
+        if (write == 0 || inums[i] != inums[write-1]) {
+            inums[write++] = inums[i];
+        }
+    }
+    
+    for (uint32_t i = 0; i < write; ++i) {
+        // Assuming inode_lock takes uint64_t based on previous files
+        inode_lock(inums[i]);
+    }
+    return write;
+}
+
+static void unlock_inums_sorted(uint64_t *inums, uint32_t count) {
+    if (!inums) return;
+    for (int i = (int)count - 1; i >= 0; --i) {
+        inode_unlock(inums[i]);
+    }
+}
+
 int inode_rename(const char *from, const char *to) {
+    if (!from || !to) return -EINVAL;
+
     int ret = 0;
     char *from_dup = NULL, *to_dup = NULL;
-    char *from_dup2 = NULL;
+    char *from_dup2 = NULL, *to_dir_dup2 = NULL, *to_base_dup2 = NULL;
     char *from_dir = NULL, *from_base = NULL;
-    char *to_dir_dup = NULL, *to_base_dup = NULL;
     char *to_dir = NULL, *to_base = NULL;
     uint8_t *scratch = NULL;
 
-    // 1. Basic Argument Validation
-    if (!from || !to) {
-        return -EINVAL;
-    }
+    uint64_t from_parent_inum = 0;
+    uint64_t to_parent_inum = 0;
+    int64_t target_inum = -1; 
 
-    // 2. Loop Detection (Prevent moving /A into /A/B)
-    // A simple string prefix check handles the most common cases.
-    size_t from_len = strlen(from);
+    // 1. Basic checks
+    if (strcmp(from, to) == 0) return -EINVAL;
 
-    if (strncmp(from, to, from_len) == 0 && to[from_len] == '/') {
-        return -EINVAL;
-    }
-
-    // 3. Parse Paths
+    // 2. Allocations
     from_dup = strdup(from);
     to_dup = strdup(to);
     from_dup2 = strdup(from);
+    to_dir_dup2 = strdup(to);
+    to_base_dup2 = strdup(to);
 
-    if (!from_dup || !to_dup) { 
-        ret = -ENOMEM; 
-        goto cleanup; 
+    if (!from_dup || !to_dup || !from_dup2 || !to_dir_dup2 || !to_base_dup2) { 
+        ret = -ENOMEM; goto cleanup; 
     }
 
     from_dir = dirname(from_dup);
     from_base = basename(from_dup2);
+    to_dir = dirname(to_dir_dup2);
+    to_base = basename(to_base_dup2);
 
-    // Need separate duplicate for destination dirname/basename calls
-    to_dir_dup = strdup(to);
-    to_base_dup = strdup(to);
+    // 3. Resolve Parents (No Locks yet)
+    int64_t f_pi = inode_find_by_path(from_dir);
+    if (f_pi < 0) { ret = (int)f_pi; goto cleanup; }
+    from_parent_inum = (uint64_t)f_pi;
 
-    if (!to_dir_dup || !to_base_dup) { 
-        ret = -ENOMEM; 
-        goto cleanup; 
-    }
+    int64_t t_pi = inode_find_by_path(to_dir);
+    if (t_pi < 0) { ret = (int)t_pi; goto cleanup; }
+    to_parent_inum = (uint64_t)t_pi;
 
-    to_dir = dirname(to_dir_dup);
-    to_base = basename(to_base_dup);
+    // 4. Find Target (No Locks yet)
+    // We need to know the target inum to include it in the lock list
+    // Note: We are reading from_parent without a lock here. This is a race condition,
+    // but unavoidable if we want to sort locks to prevent deadlocks. 
+    // We will RE-VERIFY target after locking.
+    target_inum = inode_find_dirent(from_parent_inum, from_base);
+    if (target_inum < 0) { ret = -ENOENT; goto cleanup; }
 
-    // 4. Resolve Parent Inodes
-    int from_parent_inum = inode_find_by_path(from_dir);
-    int to_parent_inum = inode_find_by_path(to_dir);
+    // 5. Loop Detection (Moving dir into its own child)
+    if (target_inum >= 0) {
+        struct inode walk_node;
+        uint64_t cur = to_parent_inum;
+        
+        while (cur != 0 && cur != (uint64_t)target_inum) {
+            if (cur == return_root_inode()) break; 
 
-    if (from_parent_inum < 0) { 
-        ret = from_parent_inum; 
-        goto cleanup; 
-    }
-
-    if (to_parent_inum < 0) { 
-        ret = to_parent_inum; 
-        goto cleanup; 
-    }
-
-    inode_lock(from_parent_inum);
-    inode_lock(to_parent_inum);
-
-    // 5. Find Source Inode
-    int target_inum = inode_find_dirent((uint64_t)from_parent_inum, from_base);
-
-    if (target_inum < 0) { 
-        ret = -ENOENT; 
-        inode_unlock(to_parent_inum);
-        inode_unlock(from_parent_inum);
-        goto cleanup; 
-    }
-
-    // 6. Check Destination status
-    int dest_exists = inode_find_dirent((uint64_t)to_parent_inum, to_base);
-    
-    // Standard POSIX behavior requires atomic replacement, but for this 
-    // filesystem implementation, we fail if destination exists to avoid 
-    // complex transaction rollback logic.
-    if (dest_exists >= 0) {
-        ret = -EEXIST;
-        inode_unlock(to_parent_inum);
-        inode_unlock(from_parent_inum);
-        goto cleanup;
-    }
-
-    inode_lock(target_inum);
-    inode_lock(dest_exists);
-
-    // 7. Add Link to New Parent
-    directory_entry new_val;
-    new_val.inum = target_inum;
-    strncpy(new_val.name, to_base, MAX_FILENAME_LEN);
-
-    ret = inode_add_dirent((uint64_t)to_parent_inum, &new_val);
-
-    if (ret != 0)
-    {
-        inode_unlock(dest_exists);
-        inode_unlock(target_inum);
-        inode_unlock(to_parent_inum);
-        inode_unlock(from_parent_inum);
-        goto cleanup;
-    }
-    // 8. Remove Link from Old Parent
-    directory_entry old_val;
-    old_val.inum = target_inum;
-    strncpy(old_val.name, from_base, MAX_FILENAME_LEN);
-    ret = inode_remove_dirent((uint64_t)from_parent_inum, &old_val);
-
-    if (ret != 0) {
-        // CRITICAL ERROR: We added to new but failed to remove from old.
-        // Ideally, we should try to undo the add_dirent here.
-        // For this implementation, we return the error.
-        // todo: ??
-        inode_unlock(dest_exists);
-        inode_unlock(target_inum);
-        inode_unlock(to_parent_inum);
-        inode_unlock(from_parent_inum);
-        goto cleanup;
-    }
-
-    // 9. Handle Directory Specific Updates (The Fix)
-    struct inode target_node;
-
-    if (inode_read_from_disk_private((uint64_t)target_inum, &target_node) != 0) {
-        ret = -EIO; 
-        inode_unlock(dest_exists);
-        inode_unlock(target_inum);
-        inode_unlock(to_parent_inum);
-        inode_unlock(from_parent_inum);
-        goto cleanup;
-    }
-
-    if (S_ISDIR(target_node.mode)) {
-        // If we moved to a different directory, we must update '..'
-        if (from_parent_inum != to_parent_inum) {
+            if (inode_read_from_disk_private(cur, &walk_node) != 0) { ret = -EIO; goto cleanup; }
             
-            // A. Update Parent Link Counts
-            // Old parent loses a link (the ".." from the child is gone)
-            // inode_lock((uint64_t)from_parent_inum);
-
-            struct inode from_p_node;
-            inode_read_from_disk_private((uint64_t)from_parent_inum, &from_p_node);
-
-            if (from_p_node.nlink > 2) {
-                from_p_node.nlink--;
-            }
-
-            inode_write_to_disk_private((uint64_t)from_parent_inum, &from_p_node);
-
-            // inode_unlock((uint64_t)from_parent_inum);
-
-            // New parent gains a link
-            // inode_lock((uint64_t)to_parent_inum);
-
-            struct inode to_p_node;
-            inode_read_from_disk_private((uint64_t)to_parent_inum, &to_p_node);
-            to_p_node.nlink++;
-            inode_write_to_disk_private((uint64_t)to_parent_inum, &to_p_node);
-
-            // inode_unlock((uint64_t)to_parent_inum);
-
-            // B. Update the ".." entry inside the target directory
-            create_buffer((void**)&scratch);
+            // Read ".." from block 0
+            uint64_t phy = inode_get_block_num(&walk_node, 0);
             
-
-            if (!scratch) { 
-                ret = -ENOMEM; 
-                inode_unlock(dest_exists);
-                inode_unlock(target_inum);
-                inode_unlock(to_parent_inum);
-                inode_unlock(from_parent_inum);
-                goto cleanup; 
-            }
-
-            // The "." and ".." entries are created in the first block (logical 0)
-            uint64_t old_phy_blk = inode_get_block_num(&target_node, 0);
-            
-            if (old_phy_blk != 0) {
-                // Read the directory data block
-                if (read_data_block(scratch, old_phy_blk) != 0) {
-                    ret = -EIO; 
-                    inode_unlock(dest_exists);
-                    inode_unlock(target_inum);
-                    inode_unlock(to_parent_inum);
-                    inode_unlock(from_parent_inum);
-                    goto cleanup;
-                }
-
+            uint64_t parent_inum = 0;
+            if (phy != 0) {
+                if (!scratch) { create_buffer((void**)&scratch); if(!scratch) { ret = -ENOMEM; goto cleanup; } }
+                
+                if (read_data_block(scratch, phy) != 0) { ret = -EIO; goto cleanup; }
+                
                 directory_entry *ents = (directory_entry*)scratch;
-                int updated = 0;
-
-                // Find ".." and update it
+                
                 for (uint64_t i = 0; i < dir_entries_per_block(); ++i) {
-                    if (ents[i].inum != 0 && strcmp(ents[i].name, "..") == 0) {
-                        ents[i].inum = (uint64_t)to_parent_inum;
-                        updated = 1;
-                        break;
+                    if (ents[i].is_valid && strcmp(ents[i].name, "..") == 0) { 
+                        parent_inum = ents[i].inum; 
+                        break; 
                     }
                 }
+            }
+            
+            if (parent_inum == (uint64_t)target_inum) { ret = -EINVAL; goto cleanup; }
+            if (parent_inum == 0 || parent_inum == cur) break; // reached top or error
+            cur = parent_inum;
+        }
+    }
 
-                if (updated) {
-                    // CoW: Write modified buffer to a new block
-                    uint64_t new_phy_blk = 0;
-                    if (write_to_next_free_block(scratch, &new_phy_blk) != 0) {
-                        ret = -EIO; 
-                        inode_unlock(dest_exists);
-                        inode_unlock(target_inum);
-                        inode_unlock(to_parent_inum);
-                        inode_unlock(from_parent_inum);
-                        goto cleanup;
-                    }
+    // 6. SORTED LOCKING (Deadlock Fix)
+    uint64_t locks[3];
+    locks[0] = from_parent_inum;
+    locks[1] = to_parent_inum;
+    locks[2] = (target_inum >= 0) ? (uint64_t)target_inum : 0; // Don't lock if target invalid
 
-                    // Update the inode's pointer tree
-                    if (inode_set_block_num((uint64_t)target_inum, &target_node, 0, new_phy_blk) != 0) {
-                        free_data_block(new_phy_blk); // Rollback
-                        ret = -EIO; 
-                        inode_unlock(dest_exists);
-                        inode_unlock(target_inum);
-                        inode_unlock(to_parent_inum);
-                        inode_unlock(from_parent_inum);
-                        goto cleanup;
-                    }
+    uint32_t lock_count = lock_inums_sorted(locks, 3);
 
-                    // Persist the modified inode (which now points to the new block)
-                    inode_write_to_disk_private((uint64_t)target_inum, &target_node);
-                    
-                    // Note: The old physical block refcount decrement is handled by inode_set_block_num
-                    // (assuming your CoW logic there correctly calls free_data_block on the old pointer)
+    // 7. Re-Validation (Critical after locking)
+    // Check if target is still there
+    int64_t re_target = inode_find_dirent(from_parent_inum, from_base);
+    if (re_target < 0 || re_target != target_inum) { ret = -ENOENT; goto locked_cleanup; }
+
+    // Check if dest exists
+    int dest_exists = inode_find_dirent(to_parent_inum, to_base);
+    if (dest_exists >= 0) { ret = -EEXIST; goto locked_cleanup; }
+
+    // 8. Perform Rename Operations
+    
+    // A. Add to new parent
+    directory_entry new_val;
+    memset(&new_val, 0, sizeof(new_val));
+    new_val.inum = (uint64_t)target_inum;
+    new_val.is_valid = 1;
+    strncpy(new_val.name, to_base, MAX_FILENAME_LEN);
+    // strncpy pads with nulls, but manual set is safe
+    new_val.name[MAX_FILENAME_LEN] = '\0'; 
+
+    ret = inode_add_dirent(to_parent_inum, &new_val);
+    if (ret != 0) goto locked_cleanup;
+
+    // B. Remove from old parent
+    directory_entry old_val;
+    memset(&old_val, 0, sizeof(old_val));
+    old_val.inum = (uint64_t)target_inum;
+    strncpy(old_val.name, from_base, MAX_FILENAME_LEN);
+    old_val.name[MAX_FILENAME_LEN] = '\0';
+
+    ret = inode_remove_dirent(from_parent_inum, &old_val);
+    if (ret != 0) {
+        // Rollback: remove the entry we just added
+        inode_remove_dirent(to_parent_inum, &new_val);
+        goto locked_cleanup;
+    }
+
+    // C. Update ".." if Directory
+    struct inode target_node;
+    if (inode_read_from_disk_private((uint64_t)target_inum, &target_node) != 0) { ret = -EIO; goto locked_cleanup; }
+
+    if (S_ISDIR(target_node.mode) && from_parent_inum != to_parent_inum) {
+        struct inode from_p_node, to_p_node;
+        inode_read_from_disk_private(from_parent_inum, &from_p_node);
+        inode_read_from_disk_private(to_parent_inum, &to_p_node);
+
+        if (from_p_node.nlink > 0) from_p_node.nlink--;
+        to_p_node.nlink++;
+
+        inode_write_to_disk_private(from_parent_inum, &from_p_node);
+        inode_write_to_disk_private(to_parent_inum, &to_p_node);
+
+        // Update ".." inside the moved directory
+        if (!scratch) create_buffer((void**)&scratch);
+        
+        // FIX: Signature match
+        uint64_t old_phy_blk = inode_get_block_num(&target_node, 0); 
+        
+        if (old_phy_blk != 0) {
+            if (read_data_block(scratch, old_phy_blk) != 0) { ret = -EIO; goto locked_cleanup; }
+
+            directory_entry *ents = (directory_entry*)scratch;
+            int updated = 0;
+            for (uint64_t i = 0; i < dir_entries_per_block(); ++i) {
+                if (ents[i].is_valid && strcmp(ents[i].name, "..") == 0) {
+                    ents[i].inum = to_parent_inum;
+                    updated = 1;
+                    break;
                 }
+            }
+
+            if (updated) {
+                uint64_t new_phy_blk = 0;
+                
+                if (write_to_next_free_block(scratch, &new_phy_blk) != 0) { ret = -EIO; goto locked_cleanup; }
+
+                // FIX: inode_set_block_num in inode.c ALREADY frees the old block.
+                // Do NOT call free_data_block(old_phy_blk) here manually.
+                if (inode_set_block_num((uint64_t)target_inum, &target_node, 0, new_phy_blk) != 0) {
+                    free_data_block(new_phy_blk); // free new one if set failed
+                    ret = -EIO; goto locked_cleanup;
+                }
+
+                inode_write_to_disk_private((uint64_t)target_inum, &target_node);
             }
         }
     }
-    inode_unlock(dest_exists);
-    inode_unlock(target_inum);
-    inode_unlock(to_parent_inum);
-    inode_unlock(from_parent_inum);
 
     ret = 0;
 
+locked_cleanup:
+    unlock_inums_sorted(locks, lock_count);
+
 cleanup:
-    if(from_dup2) free(from_dup2);
     if (from_dup) free(from_dup);
     if (to_dup) free(to_dup);
-    if (to_dir_dup) free(to_dir_dup);
-    if (to_base_dup) free(to_base_dup);
+    if (from_dup2) free(from_dup2);
+    if (to_dir_dup2) free(to_dir_dup2);
+    if (to_base_dup2) free(to_base_dup2);
     if (scratch) free(scratch);
     return ret;
 }
