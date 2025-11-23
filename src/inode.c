@@ -630,7 +630,7 @@ uint64_t inode_set_block_num(uint64_t inum, struct inode *node,
     if (logical_block < dbl_range) {
         uint64_t new_datatable = 0;
         double_indirect_address_edit(logical_block, node->double_indirect, new_physical_block, &new_datatable);
-        node->single_indirect = new_datatable;
+        node->double_indirect = new_datatable;
         free(scratch);
         return rc;
     }
@@ -643,7 +643,7 @@ uint64_t inode_set_block_num(uint64_t inum, struct inode *node,
     if (logical_block < tpl_range) {
         uint64_t new_datatable = 0;
         triple_indirect_address_edit(logical_block, node->triple_indirect, new_physical_block, &new_datatable);
-        node->single_indirect = new_datatable;
+        node->triple_indirect = new_datatable;
         free(scratch);
         return rc;
     }
