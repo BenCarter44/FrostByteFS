@@ -383,11 +383,6 @@ int double_indirect_address_edit(uint64_t logical_block, uint64_t datatable, uin
         return r;
     }
     // replace entry with this new value.
-    if(scratch[row_index] > 0)
-    {
-        // free old table.
-        assert(free_data_block(scratch[row_index]) == 0);
-    }
     scratch[row_index] = updated_single_table;
     // save
     r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
@@ -428,12 +423,6 @@ int triple_indirect_address_edit(uint64_t logical_block, uint64_t datatable, uin
         return r;
     }
     
-    // replace entry with this new value.
-    if(scratch[row_index] > 0)
-    {
-        // free old table.
-        assert(free_data_block(scratch[row_index]) == 0);
-    }
     scratch[row_index] = updated_matrix;
     // save
     r = write_to_next_free_block((uint8_t*)scratch, new_datatable);
