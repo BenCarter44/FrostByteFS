@@ -516,7 +516,7 @@ uint64_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
             return 0;
         }
         uint64_t out = 0;
-        triple_indirect_address(logical_block, node->double_indirect, &out);
+        triple_indirect_address(logical_block, node->triple_indirect, &out);
         free(scratch);
         return out;
     }
@@ -988,8 +988,9 @@ int inode_find_dirent(uint64_t dir_inum, const char *name) {
         if(list[index].inum != 0 && strncmp(list[index].name, name, MAX_FILENAME_LEN) == 0)
         {
             // match!
+            int out = (int)list[index].inum;
             free(scratch);
-            return (int)list[index].inum;
+            return out;
         }
         index++;
     }
