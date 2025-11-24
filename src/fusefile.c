@@ -264,7 +264,7 @@ int frostbyte_create(const char* path, mode_t fmode, struct fuse_file_info* finf
 {  
     printf("frostbyte_create(path=\"%s\", mode=%o)\n", path, fmode);
     print_fuse_info(finfo);
-    int32_t i = finfo->flags | O_CREAT | O_WRONLY | O_TRUNC;
+    int32_t i = finfo->flags | O_CREAT | O_TRUNC;
     finfo->flags = i;
     finfo->fh = (uint64_t)fmode; // temp, store mode to open call.
     return frostbyte_open(path, finfo);
