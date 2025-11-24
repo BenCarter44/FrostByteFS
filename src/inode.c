@@ -493,7 +493,7 @@ uint64_t inode_get_block_num(const struct inode *node, uint64_t logical_block) {
             return 0;
         }
         uint64_t out = 0;
-        triple_indirect_address(logical_block, node->double_indirect, &out);
+        triple_indirect_address(logical_block, node->triple_indirect, &out);
         free(scratch);
         return out;
     }
