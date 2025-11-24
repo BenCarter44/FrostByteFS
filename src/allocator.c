@@ -1,4 +1,6 @@
 #include "allocator.h"
+#include <stdio.h>
+#include <inttypes.h>
 
 #define REF_IS_NON_EXISTANT 255
 #define REF_IS_FULL 254
@@ -99,15 +101,6 @@ int read_inode_block(uint8_t* buffer, uint64_t reference_block_number)
 int write_inode_block(const uint8_t* buffer, uint64_t reference_block_number)
 {
     pthread_mutex_lock(allocator_lock);
-    if(reference_block_number == 0)
-    {
-        bool trigger = true;
-        for(int i = 128; i < 256; i++)
-        {
-            if(buffer[i] != 0) { trigger = false; break; }
-        }
-        if(trigger) { gdb_break_alloc(); }
-    }
     if(reference_block_number >= INODE_BLOCKS * BYTES_PER_BLOCK)
     {
         pthread_mutex_unlock(allocator_lock);
@@ -164,6 +157,7 @@ int read_data_block(uint8_t* buffer, uint64_t block_number)
 
 int free_data_block(uint64_t block_number)
 {
+    printf("\033[96;1mFree block: %" PRIu64 "\033[0m\n",block_number);
     if(block_number == 1)
     {
         gdb_break_alloc();
@@ -265,6 +259,7 @@ int write_to_next_free_block(const uint8_t* buffer, uint64_t* block_number)
 
     ret = increment_reference(1, *block_number); // increment by 1
     pthread_mutex_unlock(allocator_lock);
+    printf("\033[92;1mWrite block: %" PRIu64 "\033[0m\n",*block_number);
     return 0;
 }
 

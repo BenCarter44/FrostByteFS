@@ -158,7 +158,6 @@ static int inode_write_to_disk_private(uint64_t inum, const struct inode *node) 
     }
     
     // todo: should be continued or return error code
-    printf("Save INODE blk read: %u\n", block_num);
     if (read_inode_block(buf, block_num) != 0) {
         // If we cannot read, try to zero buffer (new FS) and continue
         memset(buf, 0, BYTES_PER_BLOCK);
@@ -167,7 +166,6 @@ static int inode_write_to_disk_private(uint64_t inum, const struct inode *node) 
     memcpy(((uint8_t*)buf) + idx * sizeof(struct inode), node, sizeof(struct inode));
 
     int rc = 0;
-    printf("Read INODE blk: %u\n", block_num);
     rc = write_inode_block(buf, block_num);
 
     free_buffer(buf);
