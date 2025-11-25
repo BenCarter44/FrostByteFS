@@ -77,6 +77,11 @@ int frostbyte_fsyncdir(const char *path, int datasync, struct fuse_file_info *fi
 {
     printf("frostbyte_fsyncdir(path=\"%s\", datasync=%d)\n", path, datasync);
     print_fuse_info(fi);
+    int r = fsync_disk();
+    if(r < 0)
+    {
+        return -EIO;
+    }
     return 0;
 }
 

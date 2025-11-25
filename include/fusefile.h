@@ -47,12 +47,12 @@ int frostbyte_write(const char* path, const char* buffer, size_t len, off_t offs
 // int frostbyte_write_buffer(const char* path, struct fuse_bufvec* buf, off_t offset, struct fuse_file_info* finfo);
 // int frostbyte_read_buffer(const char* path, struct fuse_bufvec** buf, size_t size, off_t offset, struct fuse_file_info* finfo);
 
-int frostbyte_allocate(const char* path, int len, off_t offset, off_t offset2, struct fuse_file_info* finfo);
-ssize_t frostbyte_copy_file_range(const char *path_in,
-                struct fuse_file_info *fi_in,
-                off_t offset_in, const char *path_out,
-                struct fuse_file_info *fi_out,
-                off_t offset_out, size_t size, int flags);
+// int frostbyte_allocate(const char* path, int len, off_t offset, off_t offset2, struct fuse_file_info* finfo);
+// ssize_t frostbyte_copy_file_range(const char *path_in,
+//                 struct fuse_file_info *fi_in,
+//                 off_t offset_in, const char *path_out,
+//                 struct fuse_file_info *fi_out,
+//                 off_t offset_out, size_t size, int flags);
 
 
 int frostbyte_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi);

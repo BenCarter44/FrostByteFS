@@ -235,6 +235,12 @@ int frostbyte_flush(const char* path, struct fuse_file_info* finfo)
         return inode;
     }
     // Do nothing?
+    
+    int r = fsync_disk();
+    if(r < 0)
+    {
+        return -EIO;
+    }
 
     printf("frostbyte_flush(path=\"%s\")\n", path);
     print_fuse_info(finfo);
@@ -282,7 +288,6 @@ int frostbyte_fsync(const char* path, int fint, struct fuse_file_info* finfo)
     printf("frostbyte_fsync(path=\"%s\", fint=%d)\n", path, fint);
     print_fuse_info(finfo);
     return frostbyte_flush(path, finfo);
-    return 0;
 }
 
 
@@ -510,49 +515,47 @@ int frostbyte_write(const char* path, const char* buffer, size_t len, off_t offs
 //     return 0;
 // }
 
-ssize_t frostbyte_copy_file_range(const char *path_in,
-                                  struct fuse_file_info *fi_in,
-                                  off_t offset_in,
-                                  const char *path_out,
-                                  struct fuse_file_info *fi_out,
-                                  off_t offset_out,
-                                  size_t size,
-                                  int flags) 
-{
-    int inum = inode_find_by_path(path_in);
-    if (inum < 0) {
-        return inum;
-    }
-    int inum2 = inode_find_by_path(path_out);
-    if (inum2 < 0) {
-        return inum2;
-    }
-    // assumes everything fits in memory!
-    uint8_t* buffer = (uint8_t*)malloc(size);
-
-    int r = inode_read(inum, buffer, size, offset_in);
-    if(r < 0)
-    {
-        free(buffer);
-        return r;
-    }
-    r = inode_write(inum, buffer, size, offset_out);
-    if(r < 0)
-    {
-        free(buffer);
-        return r;
-    }
-    free(buffer);
-    printf("frostbyte_copy_file_range(path_in=\"%s\", offset_in=%ld, path_out=\"%s\", "
-           "offset_out=%ld, size=%zu, flags=%d)\n",
-           path_in, (long)offset_in,
-           path_out, (long)offset_out,
-           size, flags);
-    
-    print_fuse_info(fi_in);
-    print_fuse_info(fi_out);
-    return r;
-}
+// ssize_t frostbyte_copy_file_range(const char *path_in,
+//                                   struct fuse_file_info *fi_in,
+//                                   off_t offset_in,
+//                                   const char *path_out,
+//                                   struct fuse_file_info *fi_out,
+//                                   off_t offset_out,
+//                                   size_t size,
+//                                   int flags) 
+// {
+//     int inum = inode_find_by_path(path_in);
+//     if (inum < 0) {
+//         return inum;
+//     }
+//     int inum2 = inode_find_by_path(path_out);
+//     if (inum2 < 0) {
+//         return inum2;
+//     }
+//     // assumes everything fits in memory!
+//     uint8_t* buffer = (uint8_t*)malloc(size);
+//     int r = inode_read(inum, buffer, size, offset_in);
+//     if(r < 0)
+//     {
+//         free(buffer);
+//         return r;
+//     }
+//     r = inode_write(inum, buffer, size, offset_out);
+//     if(r < 0)
+//     {
+//         free(buffer);
+//         return r;
+//     }
+//     free(buffer);
+//     printf("frostbyte_copy_file_range(path_in=\"%s\", offset_in=%ld, path_out=\"%s\", "
+//            "offset_out=%ld, size=%zu, flags=%d)\n",
+//            path_in, (long)offset_in,
+//            path_out, (long)offset_out,
+//            size, flags);
+//     print_fuse_info(fi_in);
+//     print_fuse_info(fi_out);
+//     return r;
+// }
 
 
 int frostbyte_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
