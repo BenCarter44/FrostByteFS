@@ -1828,8 +1828,8 @@ int inode_rename(const char *from, const char *to, unsigned int flags) {
         inode_unlock(from_parent_inum);
         inode_unlock(to_parent_inum);
         inode_unlink(to);
-        inode_unlock(to_parent_inum);
-        inode_unlock(from_parent_inum);
+        inode_lock(to_parent_inum);
+        inode_lock(from_parent_inum);
     }
 
     // 8. Perform Rename Operations
