@@ -31,16 +31,18 @@
 
 
 // Calc number of blocks:
+#define HASH_SIZE 32
 #define INODE_BLOCKS (uint64_t)31250 // supports 1 million 128 byte INODES
 #define REF_BLOCKS  (uint64_t)(1 + (DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS) / BYTES_PER_BLOCK)
-#define DATA_BLOCKS (uint64_t)(DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS - REF_BLOCKS)
-
+#define HASH_BLOCKS (uint64_t)(1 + ((DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS - REF_BLOCKS) * HASH_SIZE) / BYTES_PER_BLOCK)
+#define DATA_BLOCKS (uint64_t)(DISK_SIZE_IN_BLOCKS - 1 - INODE_BLOCKS - REF_BLOCKS - HASH_BLOCKS)
 
 // Layout
 #define SUPER_BLOCK 0
 #define REFERENCE_BASE_BLOCK 1
 #define INODE_BASE_BLOCK (REFERENCE_BASE_BLOCK + REF_BLOCKS)
-#define DATA_BASE_BLOCK (INODE_BASE_BLOCK + INODE_BLOCKS)
+#define HASH_BASE_BLOCK (INODE_BASE_BLOCK + INODE_BLOCKS)
+#define DATA_BASE_BLOCK (HASH_BASE_BLOCK + HASH_BLOCKS)
 
 
 
@@ -64,6 +66,7 @@ int write_inode_block(const uint8_t* buffer, uint64_t inode_block_number);
 int format_super_block();
 int clear_ref_blocks();
 int clear_inode_blocks();
+int clear_hash_blocks();
 
 // check valid super block
 bool allocator_check_valid_super_block();

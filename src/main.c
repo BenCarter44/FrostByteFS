@@ -38,6 +38,7 @@ void* frost_init(struct fuse_conn_info *conn,
         format_super_block();
         clear_ref_blocks();
         clear_inode_blocks(); // This just clears the iNode *region*
+        clear_hash_blocks();
 
         printf("L3 (FUSE): Formatting Layer 2 (iNode system)...\n");
         

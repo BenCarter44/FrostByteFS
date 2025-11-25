@@ -1,6 +1,7 @@
 #include "allocator.h"
 #include <stdio.h>
 #include <inttypes.h>
+#include <openssl/sha.h>
 
 #define REF_IS_NON_EXISTANT 255
 #define REF_IS_FULL 254
@@ -69,6 +70,7 @@ int fetch_data_block(uint8_t* buffer, uint64_t reference_block_number)
 
 int write_data_block(const uint8_t* buffer, uint64_t reference_block_number)
 {
+    printf("\033[92;1mWrite block: %" PRIu64 "\033[0m\n",reference_block_number);
     if(reference_block_number >= DATA_BLOCKS * BYTES_PER_BLOCK)
     {
         return -ALLOCATOR_OUT_OF_BOUNDS;
@@ -194,73 +196,148 @@ int free_data_block(uint64_t block_number)
     return -ALLOCATOR_DOUBLE_FREE;
 }
 
-
-static int search_for_next_free_block(uint64_t* block_number)
+static int get_block_ref_count(uint64_t block_number)
 {
-    // slow simple way....
-    // scan entire reference list to find the first 0.
-    // later.... I can cache this.
     uint8_t* buffer;
     create_buffer((void**)&buffer);
-    bool first_time = true;
-    for(uint64_t block_index = speed_free / BYTES_PER_BLOCK; block_index < REF_BLOCKS; block_index++)
+    int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + block_number / BYTES_PER_BLOCK);
+    if(ret < 0)
     {
-        int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + block_index);
-        if(ret < 0)
-        {
-            free_buffer(buffer);
-            return ret;
-        }
-        uint64_t start = 0;
-        if(first_time)
-        {
-            start = speed_free % BYTES_PER_BLOCK;
-            first_time = false;
-        }
-        for(uint64_t byte_index = start; byte_index < BYTES_PER_BLOCK; byte_index++)
-        {
-            uint8_t ref_count = buffer[byte_index];
-            if(ref_count == 0) // 254 is full. 255 is invalid
-            {
-                // is free! 
-                *(block_number) = byte_index + block_index * BYTES_PER_BLOCK;
-                speed_free = *(block_number);
-                free_buffer(buffer);
-                return 0;
-            }
-        }
+        free_buffer(buffer);
+        return ret;
     }
+    uint64_t byte_index = block_number % BYTES_PER_BLOCK;
+    uint8_t out = buffer[byte_index];
     free_buffer(buffer);
-    return -ALLOCATOR_OUT_OF_SPACE;
+    return out;
 }
 
+static int set_hash(uint8_t* hash, uint64_t index)
+{
+    uint8_t* buffer;
+    create_buffer((void**)&buffer);
+    int ret = read_block_raw(buffer, HASH_BASE_BLOCK + (index * HASH_SIZE) / BYTES_PER_BLOCK);
+    if(ret < 0)
+    {
+        free_buffer(buffer);
+        return ret;
+    }
+    uint32_t byte_index = (uint64_t)(index * HASH_SIZE) % BYTES_PER_BLOCK;
+    
+    memcpy(&buffer[byte_index],hash,HASH_SIZE);
+    
+    ret = write_block_raw(buffer, HASH_BASE_BLOCK + (index * HASH_SIZE) / BYTES_PER_BLOCK);
+    free_buffer(buffer);
+    return ret;
+}
+
+static int compare_hash_block(uint8_t* hash, const uint8_t* buffer, uint64_t block_number)
+{
+    // first see if hashes are the same.
+    uint8_t* scratch;
+    create_buffer((void**)&scratch);
+    int ret = read_block_raw(scratch, HASH_BASE_BLOCK + (block_number * HASH_SIZE) / BYTES_PER_BLOCK);
+    if(ret < 0)
+    {
+        free_buffer(scratch);
+        return ret;
+    }
+    uint32_t byte_index = (uint64_t)(block_number * HASH_SIZE) % BYTES_PER_BLOCK;
+    for(int i = 0; i < HASH_SIZE; i++)
+    {
+        if(scratch[byte_index] != hash[i])
+        {
+            free_buffer(scratch);
+            return 0;
+        }
+    }
+
+#ifndef IGNORE_HASH_COLLISIONS
+    // hashes are the same. Compare actual buffer
+    read_block_raw(scratch, DATA_BASE_BLOCK + block_number);
+    for(int i = 0; i < BYTES_PER_BLOCK; i++)
+    {
+        if(scratch[byte_index] != buffer[i])
+        {
+            free_buffer(scratch);
+            return 0;
+        }
+    }
+#endif
+    free_buffer(scratch);
+    return 1;
+}
 
 // Copy on write.... write to next free block
 // ASSUMES NO INTERRUPTIONS.... ATOMIC!
 int write_to_next_free_block(const uint8_t* buffer, uint64_t* block_number)
 {
     // requires atomic operations!
+
+    // calc block hash.
+    uint8_t hash[HASH_SIZE];
+    SHA256(buffer, BYTES_PER_BLOCK,hash);
+    
+    
+    // sort as hash list. 
+    uint64_t short_hash = ((uint64_t*)hash)[0];
+    uint64_t key = short_hash % DATA_BLOCKS;
     pthread_mutex_lock(allocator_lock);
-
-    int ret = search_for_next_free_block(block_number);
-    if(ret < 0)
+    
+    // check if free.
+    uint8_t ref_count = get_block_ref_count(key);
+    if(ref_count == 0)
     {
+        // free! This is the block!
+        write_data_block(buffer, *block_number);
+        increment_reference(1, key);
+        set_hash(hash, key);
         pthread_mutex_unlock(allocator_lock);
-        return ret;
+        *block_number = key;
+        return 0;
     }
 
-    // write data and then increment ref.
-    ret = write_data_block(buffer, *block_number);
-    if(ret < 0)
+    // not free. Is it equal?
+    if(ref_count < REF_IS_FULL && compare_hash_block(hash, buffer, key))
     {
+        // it is equal and references are remaining!
+        increment_reference(1, key);
         pthread_mutex_unlock(allocator_lock);
-        return ret;
+        *block_number = key;
+        return 0;
     }
 
-    ret = increment_reference(1, *block_number); // increment by 1
-    pthread_mutex_unlock(allocator_lock);
-    printf("\033[92;1mWrite block: %" PRIu64 "\033[0m\n",*block_number);
-    return 0;
+    // nope. Not free, not equal. Hash collision. Just try the next block.
+    uint64_t finish = key;
+    while(true)
+    {
+        key = (key + 1) % DATA_BLOCKS;
+        uint8_t ref_count = get_block_ref_count(key);
+        if(ref_count == 0)
+        {
+            write_data_block(buffer, *block_number);
+            increment_reference(1, key);
+            set_hash(hash, key);
+            pthread_mutex_unlock(allocator_lock);
+            *block_number = key;
+            return 0;
+        }
+        // not free. Is it the same?
+        if(ref_count < REF_IS_FULL && compare_hash_block(hash, buffer, key))
+        {
+            // it is the same!
+            increment_reference(1, key);
+            pthread_mutex_unlock(allocator_lock);
+            *block_number = key;
+            return 0;
+        }
+        // nope. keep going
+        if(key == finish)
+        {
+            break;
+        }
+    }
+    return -ALLOCATOR_OUT_OF_SPACE;
 }
 
 
@@ -363,6 +440,28 @@ int clear_inode_blocks()
         printf("INode Block: %" PRIu64 " / %" PRIu64 "  \r", i, INODE_BLOCKS);
         fflush(stdout);
         int ret = write_block_raw(buffer, INODE_BASE_BLOCK + i);
+        if(ret < 0)
+        {
+            free_buffer(buffer);
+            return ret;
+        }
+    }
+    printf("\n");
+    free_buffer(buffer);
+    return 0;
+}
+
+
+int clear_hash_blocks()
+{
+    uint8_t* buffer;
+    create_buffer((void**)&buffer);
+    clear_buffer(buffer);
+    for(uint64_t i = 0; i < HASH_BLOCKS; i++)
+    {
+        printf("Hash Block: %" PRIu64 " / %" PRIu64 "  \r", i, HASH_BLOCKS);
+        fflush(stdout);
+        int ret = write_block_raw(buffer, HASH_BASE_BLOCK + i);
         if(ret < 0)
         {
             free_buffer(buffer);
