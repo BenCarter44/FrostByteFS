@@ -1718,7 +1718,7 @@ static void unlock_inums_sorted(uint64_t *inums, uint32_t count) {
     }
 }
 
-int inode_rename(const char *from, const char *to) {
+int inode_rename(const char *from, const char *to, unsigned int flags) {
     if (!from || !to) return -EINVAL;
 
     int ret = 0;
@@ -1818,7 +1818,19 @@ int inode_rename(const char *from, const char *to) {
 
     // Check if dest exists
     int dest_exists = inode_find_dirent(to_parent_inum, to_base);
-    if (dest_exists >= 0) { ret = -EEXIST; goto locked_cleanup; }
+    if (dest_exists >= 0) {
+        // return error!
+        if(flags & RENAME_NOREPLACE)
+        {
+            ret = -EEXIST; goto locked_cleanup;
+        }
+        // else overwrite!
+        inode_unlock(from_parent_inum);
+        inode_unlock(to_parent_inum);
+        inode_unlink(to);
+        inode_unlock(to_parent_inum);
+        inode_unlock(from_parent_inum);
+    }
 
     // 8. Perform Rename Operations
     

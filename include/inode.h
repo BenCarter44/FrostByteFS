@@ -16,7 +16,6 @@
 #include <inttypes.h>
 
 
-
 // --- iNode Definitions ---
 
 #define INODE_SIZE 128
@@ -59,6 +58,18 @@ typedef struct directory_entry {
     char name[MAX_FILENAME_LEN + 1];
     int is_valid;
 } directory_entry;
+
+
+// Rename kernel mappings.
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE	(1 << 0)	/* Don't overwrite target */
+#endif
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE		(1 << 1)	/* Exchange source and dest */
+#endif
+#ifndef RENAME_WHITEOUT
+#define RENAME_WHITEOUT		(1 << 2)	/* Whiteout source */
+#endif
 
 
 // --- iNode Layer API ---
@@ -111,7 +122,7 @@ int inode_write_to_disk(uint64_t inum, const struct inode *node);
 int64_t  return_root_inode(); // done, just returns 1 ROOT INODE IS 1!
 
 // int inode_rename(uint64_t inode, const char *to);
-int inode_rename(const char *from, const char *to);
+int inode_rename(const char *from, const char *to, unsigned int flags);
 int inode_chown(uint64_t inode, uid_t user, gid_t group);
 int inode_chmod(uint64_t inode, mode_t fmode);
 
