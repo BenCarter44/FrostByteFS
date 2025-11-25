@@ -47,10 +47,12 @@ int main(int argc, char** argv)
     printf("Number of bytes per block: %u\n", BYTES_PER_BLOCK);
     printf("Number of INODE blocks: %u\n", INODE_BLOCKS);
     printf("Number of Reference blocks: %u\n", REF_BLOCKS);
+    printf("Number of Hash Blocks: %u\n", HASH_BLOCKS);
     printf("Number of Data Blocks: %u\n", DATA_BLOCKS);
     printf("Super block position: %u\n",SUPER_BLOCK);
     printf("Reference base block: %u\n", REFERENCE_BASE_BLOCK);
     printf("Inode base block reference: %u\n", INODE_BASE_BLOCK);
+    printf("Hash base block reference: %u\n", HASH_BASE_BLOCK);
     printf("Data base block: %u\n", DATA_BASE_BLOCK);
 
     int result = open_disk("/dev/vdb");
