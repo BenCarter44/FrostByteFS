@@ -110,7 +110,7 @@ ssize_t inode_read(uint64_t inum, void *buf, size_t size, off_t offset);
 ssize_t inode_write(uint64_t inum, const void *buf, size_t size, off_t offset);
 int inode_readdir(uint64_t inum, void *buf, fuse_fill_dir_t filler);
 
-int inode_unlink(const char *path);
+int inode_unlink(const char *path, bool ignore_locks);
 int inode_truncate(uint64_t inum, off_t size);
 
 // New helpers to read/write the inode structs themselves

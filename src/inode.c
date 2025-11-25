@@ -27,6 +27,9 @@
 #error "MAX_FILENAME_LEN must be defined in inode.h"
 #endif
 
+// only for unlink:
+#define IGNORE_LOCKS 1
+#define USE_LOCKS 0
 
 // Global per-inode locking structure. Must be initialized at mount time.
 static pthread_mutex_t *inode_locks = NULL;
@@ -1251,7 +1254,7 @@ int64_t inode_create(const char *path, mode_t mode, uint64_t *out_inum) {
 /*
  * inode_unlink: remove file (non-directory).
  */
-int inode_unlink(const char *path) {
+int inode_unlink(const char *path, bool ignore_locks) {
     if (!path || strcmp(path, "/") == 0) return -EINVAL;
     char *dup = strdup(path);
     if (!dup) return -ENOMEM;
@@ -1266,21 +1269,45 @@ int inode_unlink(const char *path) {
     int target = inode_find_dirent((uint64_t)parent, basepart);
     if (target < 0) { free(dup); free(dup2); return -ENOENT; }
 
-    inode_lock(parent);
-
+    if(!ignore_locks)
+    {
+        inode_lock(parent);
+    }
+    
     directory_entry entry_of_file;
     entry_of_file.inum = target;
     strncpy(entry_of_file.name, basepart, MAX_FILENAME_LEN);
 
     struct inode node;
     inode_read_from_disk_private((uint64_t)target, &node);
-    if (S_ISDIR(node.mode)) { free(dup); free(dup2); return -EISDIR; }
+    if (S_ISDIR(node.mode)) 
+    { 
+        if(!ignore_locks)
+        {
+            inode_unlock(parent);
+        }
+        free(dup); 
+        free(dup2); 
+        return -EISDIR; 
+    }
 
     // Remove from parent dir
-    if (inode_remove_dirent((uint64_t)parent, &entry_of_file) != 0) { free(dup); free(dup2); return -EIO; }
+    if (inode_remove_dirent((uint64_t)parent, &entry_of_file) != 0)
+    {
+        if(!ignore_locks)
+        {
+            inode_unlock(parent);
+        }
+        free(dup);
+        free(dup2);
+        return -EIO;
+    }
 
     // Decrement link and possibly free inode
-    inode_lock((uint64_t)target);
+    if(!ignore_locks)
+    {
+        inode_lock((uint64_t)target);
+    }
     inode_read_from_disk_private((uint64_t)target, &node);
     if (node.nlink > 0) 
     {
@@ -1288,8 +1315,11 @@ int inode_unlink(const char *path) {
     }
     if (node.nlink > 0) {
         inode_write_to_disk_private((uint64_t)target, &node);
-        inode_unlock((uint64_t)target);
-        inode_unlock(parent);
+        if(!ignore_locks)
+        {
+            inode_unlock((uint64_t)target);
+            inode_unlock(parent);
+        }
         free(dup); free(dup2);
         return 0;
     }
@@ -1297,11 +1327,18 @@ int inode_unlink(const char *path) {
     // free all blocks and inode
     // inode_truncate_private(target,0);
     inode_write_to_disk_private((uint64_t)target, &node);
-    inode_unlock((uint64_t)target);
+    if(!ignore_locks)
+    {
+        inode_unlock((uint64_t)target);
+    }
 
     inode_free((uint64_t)target);
-    free(dup); free(dup2);
-    inode_unlock(parent);
+    free(dup); 
+    free(dup2);
+    if(!ignore_locks)
+    {
+        inode_unlock((uint64_t)parent);
+    }
     return 0;
 }
 
@@ -1825,11 +1862,7 @@ int inode_rename(const char *from, const char *to, unsigned int flags) {
             ret = -EEXIST; goto locked_cleanup;
         }
         // else overwrite!
-        inode_unlock(from_parent_inum);
-        inode_unlock(to_parent_inum);
-        inode_unlink(to);
-        inode_lock(to_parent_inum);
-        inode_lock(from_parent_inum);
+        inode_unlink(to, IGNORE_LOCKS);
     }
 
     // 8. Perform Rename Operations

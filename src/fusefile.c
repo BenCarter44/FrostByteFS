@@ -208,7 +208,7 @@ int frostbyte_unlink(const char* path)
     // see https://www.man7.org/linux/man-pages/man2/open.2.html for error codes
     
     printf("frostbyte_unlink(path=\"%s\")\n", path);
-    return inode_unlink(path);
+    return inode_unlink(path, 0);
 }
 
 int frostbyte_rename(const char* path_old, const char* path_new, unsigned int flags) 
