@@ -69,12 +69,14 @@ void inode_global_init() {
 }
 
 static inline void inode_lock(uint64_t inum) {
+    printf("\033[91;1mI-lock:      %" PRIu64 "\033[0m\n", inum);
     if (inode_locks && inum < g_max_inodes) {
         pthread_mutex_lock(&inode_locks[inum]);
     }
 }
 
 static inline void inode_unlock(uint64_t inum) {
+    printf("\033[93;1mI-unlock:    %" PRIu64 "\033[0m\n", inum);
     if (inode_locks && inum < g_max_inodes) {
         pthread_mutex_unlock(&inode_locks[inum]);
     }
@@ -101,6 +103,7 @@ static int inode_write_to_disk_private(uint64_t inum, const struct inode *node);
 static ssize_t inode_read_private(uint64_t inum, void *buf, size_t size, off_t offset);
 static ssize_t inode_write_private(uint64_t inum, const void *buf, size_t size, off_t offset);
 int inode_truncate_private(uint64_t inum, off_t newsize);
+static int64_t inode_find_by_path_private_lock(const char *path, bool ignore_locks);
 
 /* -------------------------
  * Basic inode read/write
@@ -1263,7 +1266,7 @@ int inode_unlink(const char *path, bool ignore_locks) {
     char *dirpart = dirname(dup);
     char *basepart = basename(dup2);
 
-    int parent = inode_find_by_path(dirpart);
+    int parent = inode_find_by_path_private_lock(dirpart, ignore_locks);
     if (parent < 0) { free(dup); free(dup2); return parent; }
 
     int target = inode_find_dirent((uint64_t)parent, basepart);
@@ -1389,7 +1392,11 @@ int inode_readdir(uint64_t dir_inum, void *buf, fuse_fill_dir_t filler) {
  * inode_find_by_path: resolves an absolute path to an inode number.
  * Returns inum >= 0 on success or negative error.
  */
-int64_t inode_find_by_path(const char *path) {
+int64_t inode_find_by_path(const char* path)
+{
+    return inode_find_by_path_private_lock(path, 0);
+}
+int64_t inode_find_by_path_private_lock(const char *path, bool ignore_locks) {
     if (!path || path[0] != '/') {
         return -EINVAL;
     }
@@ -1417,10 +1424,15 @@ int64_t inode_find_by_path(const char *path) {
             free(dup); 
             return -ENOTDIR; 
         }
-        inode_lock(cur_inum);
+        if(!ignore_locks)
+        {
+            inode_lock(cur_inum);
+        }
         int next = inode_find_dirent((uint64_t)cur_inum, token);
-        inode_unlock(cur_inum);
-
+        if(!ignore_locks)
+        {
+            inode_unlock(cur_inum);
+        }
         if (next < 0) { 
             free(dup); 
             return -ENOENT; 
@@ -1630,7 +1642,7 @@ static int is_dir_empty(uint64_t dir_inum) {
     return 1; // Empty
 }
 
-int inode_rmdir(const char *path) {
+int inode_rmdir(const char *path, bool ignore_locks) {
     if (!path || strcmp(path, "/") == 0) return -EINVAL;
 
     char *dup = strdup(path);
@@ -1640,26 +1652,38 @@ int inode_rmdir(const char *path) {
     char *dirpart = dirname(dup);
     char *basepart = basename(dup2);
 
-    int parent_inum = inode_find_by_path(dirpart);
+    int parent_inum = inode_find_by_path_private_lock(dirpart, ignore_locks);
     if (parent_inum < 0) { free(dup); free(dup2); return parent_inum; }
 
     // Check if target exists in parent
-    inode_lock(parent_inum);
+    if(!ignore_locks)
+    {
+        inode_lock(parent_inum);
+    }
     int target_inum = inode_find_dirent((uint64_t)parent_inum, basepart);
     
     if (target_inum < 0) { 
-        inode_unlock(parent_inum);
+        if(!ignore_locks)
+        {
+            inode_unlock(parent_inum);
+        }
         free(dup); free(dup2);
         return -ENOENT;
     }
 
-    inode_lock(target_inum);
+    if(!ignore_locks)
+    {
+        inode_lock(target_inum);
+    }
     struct inode target_node;
     inode_read_from_disk_private((uint64_t)target_inum, &target_node);
 
     if (!S_ISDIR(target_node.mode)) {
-        inode_unlock(target_inum);
-        inode_unlock(parent_inum);
+        if(!ignore_locks)
+        {
+            inode_unlock(target_inum);
+            inode_unlock(parent_inum);
+        }
         free(dup); free(dup2);
         return -ENOTDIR;
     }
@@ -1667,14 +1691,20 @@ int inode_rmdir(const char *path) {
     // Check if empty
     int empty = is_dir_empty((uint64_t)target_inum);
     if (empty < 0) { 
-        inode_unlock(target_inum);
-        inode_unlock(parent_inum);
+        if(!ignore_locks)
+        {
+            inode_unlock(target_inum);
+            inode_unlock(parent_inum);
+        }
         free(dup); free(dup2);
         return empty;
     } // Error checking
     if (empty == 0) {
-        inode_unlock(target_inum);
-        inode_unlock(parent_inum);
+        if(!ignore_locks)
+        {
+            inode_unlock(target_inum);
+            inode_unlock(parent_inum);
+        }
         free(dup); free(dup2);
         return -ENOTEMPTY;
     }
@@ -1686,8 +1716,11 @@ int inode_rmdir(const char *path) {
 
     int ret = inode_remove_dirent((uint64_t)parent_inum, &dent);
     if (ret != 0) {         
-        inode_unlock(target_inum);
-        inode_unlock(parent_inum);
+        if(!ignore_locks)
+        {
+            inode_unlock(target_inum);
+            inode_unlock(parent_inum);
+        }
         free(dup); free(dup2);
         return ret;
     }
@@ -1706,8 +1739,11 @@ int inode_rmdir(const char *path) {
     inode_free((uint64_t)target_inum);
 
     free(dup); free(dup2);
-    inode_unlock(target_inum);
-    inode_unlock(parent_inum);
+    if(!ignore_locks)
+    {
+        inode_unlock(target_inum);
+        inode_unlock(parent_inum);
+    }
     return 0;
 }
 
@@ -1862,7 +1898,16 @@ int inode_rename(const char *from, const char *to, unsigned int flags) {
             ret = -EEXIST; goto locked_cleanup;
         }
         // else overwrite!
-        inode_unlink(to, IGNORE_LOCKS);
+        struct inode node;
+        inode_read_from_disk_private((uint64_t)dest_exists, &node);
+        if (S_ISDIR(node.mode)) 
+        {
+            inode_rmdir(to, IGNORE_LOCKS);
+        }
+        else
+        {
+            inode_unlink(to, IGNORE_LOCKS);
+        }
     }
 
     // 8. Perform Rename Operations

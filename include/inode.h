@@ -126,7 +126,7 @@ int inode_rename(const char *from, const char *to, unsigned int flags);
 int inode_chown(uint64_t inode, uid_t user, gid_t group);
 int inode_chmod(uint64_t inode, mode_t fmode);
 
-int inode_rmdir(const char *path);
+int inode_rmdir(const char *path, bool ignore_lock);
 int inode_setxattr(uint64_t inode, const char* key, const char* val, size_t len, int fint);
 int inode_getxattr(uint64_t inode, const char* key, const char* val, size_t len);
 int inode_listxattr(uint64_t inode, char* val, size_t len);

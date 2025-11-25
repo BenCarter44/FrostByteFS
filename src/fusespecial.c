@@ -37,7 +37,7 @@ int frostbyte_rmdir(const char *path)
     printf("L3 (FUSE): frost_rmdir('%s') called.\n", path);
     
     // --- Call the iNode layer's rmdir function (L2) ---
-    return inode_rmdir(path);
+    return inode_rmdir(path, 0);
 }
 
 int frostbyte_opendir(const char *path, struct fuse_file_info *fi)
