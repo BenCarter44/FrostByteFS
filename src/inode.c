@@ -2025,6 +2025,11 @@ static void set_xattr_block_num(struct inode *node, uint64_t block_num) {
     memcpy(&node->extended_attributes, &block_num, sizeof(uint64_t));
 }
 
+// Helper types for readability
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+// inode_setxattr: corrected and robust version
 int inode_setxattr(uint64_t inode, const char* key, const char* val, size_t len, int flags) {
     if (strlen(key) > 255) return -ENAMETOOLONG;
 
@@ -2032,133 +2037,324 @@ int inode_setxattr(uint64_t inode, const char* key, const char* val, size_t len,
     struct inode node;
     inode_read_from_disk_private(inode, &node);
 
-    uint64_t blk = get_xattr_block_num(&node);
-    uint8_t *buffer;
-    create_buffer((void**)&buffer);
-    if (!buffer) { inode_unlock(inode); return -ENOMEM; }
+    u64 blk = get_xattr_block_num(&node);
+    uint8_t *buffer = NULL;
+    uint8_t *new_buf = NULL;
+    int ret = 0;
+    int write_ret = 0;
+    uint64_t new_blk_phy = 0;
+
+    if (create_buffer((void**)&buffer) != 0 || buffer == NULL) { ret = -ENOMEM; goto out_unlock; } // EDITED: check create_buffer result
     memset(buffer, 0, BYTES_PER_BLOCK);
 
     if (blk != 0) {
-        if (read_data_block(buffer, blk) != 0) {
-            free(buffer); inode_unlock(inode); return -EIO;
-        }
+        if (read_data_block(buffer, blk) != 0) { ret = -EIO; goto out_free_buffer; }
+    } else {
+        // No existing block: initialize header zero (total size)
+        u32 zero = 0;
+        memcpy(buffer, &zero, sizeof(u32)); // EDITED: use 4-byte total size header
     }
 
-    // Simple implementation: Linear scan. 
-    // We reconstruct the block in a temp buffer to handle add/replace
-    uint8_t *new_buf;
-    create_buffer((void**)&new_buf);
-    if (!new_buf) { free(buffer); inode_unlock(inode); return -ENOMEM; }
+    if (create_buffer((void**)&new_buf) != 0 || new_buf == NULL) { ret = -ENOMEM; goto out_free_buffer; } // EDITED
     memset(new_buf, 0, BYTES_PER_BLOCK);
 
-    uint64_t old_offset = 4; // skip size header
-    uint64_t new_offset = 4;
-    uint64_t total_data_size = *((uint64_t*)buffer);
-    // int found = 0;
+    // Read total_data_size from buffer header (4 bytes)
+    u32 total_data_size = 0;
+    memcpy(&total_data_size, buffer, sizeof(u32)); // EDITED: safe aligned copy
 
-    // Copy existing entries, skipping if we match key
-    while (old_offset < total_data_size + 4 && old_offset < BYTES_PER_BLOCK) {
+    size_t old_offset = 4; // payload start (header 4 bytes)  // EDITED: consistent header size
+    size_t new_offset = 4; // payload start
+    size_t buffer_limit = BYTES_PER_BLOCK;
+
+    // Sanity check on total_data_size
+    if (total_data_size > BYTES_PER_BLOCK - 4) { ret = -EIO; goto out_free_newbuf; } // EDITED
+
+    // Copy existing entries except any that match `key`
+    while (old_offset + 1 <= (size_t)total_data_size + 4 && old_offset + 1 < buffer_limit) {
+        // Need at least 1 byte for key_len
         uint8_t key_len = buffer[old_offset];
-        char *curr_key = (char*)(buffer + old_offset + 1);
-        uint64_t val_len = *((uint64_t*)(buffer + old_offset + 1 + key_len));
-        uint64_t entry_size = 1 + key_len + 4 + val_len;
+        size_t entry_min_hdr = 1 + key_len + 4; // key_len byte + key + 4-byte val_len
 
-        if (strncmp(curr_key, key, key_len) == 0 && strlen(key) == key_len) {
-            // found = 1;
-            // Skip this entry (we will append new version later)
-        } else {
-            // Keep this entry
-            if (new_offset + entry_size > BYTES_PER_BLOCK) {
-                free(buffer); free(new_buf); inode_unlock(inode); return -ENOSPC;
-            }
+        if (old_offset + entry_min_hdr > buffer_limit) { ret = -EIO; goto out_free_newbuf; } // EDITED: bounds check
+
+        // Read val_len safely (4 bytes)
+        u32 val_len_u32 = 0;
+        memcpy(&val_len_u32, buffer + old_offset + 1 + key_len, sizeof(u32)); // EDITED: safe read
+        size_t val_len = (size_t)val_len_u32;
+
+        size_t entry_size = 1 + key_len + 4 + val_len;
+        if (old_offset + entry_size > buffer_limit) { ret = -EIO; goto out_free_newbuf; } // EDITED: bounds check
+
+        const char *curr_key = (const char*)(buffer + old_offset + 1);
+
+        // Compare: keys are not null-terminated, use length-aware compare
+        if (!(key_len == (uint8_t)strlen(key) && memcmp(curr_key, key, key_len) == 0)) {
+            // Keep this entry: ensure space in new_buf
+            if (new_offset + entry_size > buffer_limit) { ret = -ENOSPC; goto out_free_newbuf; } // EDITED
             memcpy(new_buf + new_offset, buffer + old_offset, entry_size);
             new_offset += entry_size;
+        } else {
+            // Skip the existing entry (we'll append new version)
         }
+
         old_offset += entry_size;
     }
 
-    // Append new entry
-    uint8_t klen = (uint8_t)strlen(key);
-    uint64_t vlen = (uint64_t)len;
-    uint64_t new_entry_size = 1 + klen + 4 + vlen;
+    // Append / replace with new entry
+    uint8_t klen = (uint8_t)strlen(key); // already checked <=255 above
+    if (len > UINT32_MAX) { ret = -E2BIG; goto out_free_newbuf; } // EDITED: ensure fits in 32-bit
+    u32 vlen32 = (u32)len;
+    size_t new_entry_size = 1 + klen + 4 + (size_t)vlen32;
 
-    // todo: ?? think about extending into multiple block
-    if (new_offset + new_entry_size > BYTES_PER_BLOCK) {
-        free(buffer); free(new_buf); inode_unlock(inode); return -ENOSPC;
-    }
+    if (new_offset + new_entry_size > buffer_limit) { ret = -ENOSPC; goto out_free_newbuf; } // EDITED
 
     new_buf[new_offset] = klen;
     memcpy(new_buf + new_offset + 1, key, klen);
-    memcpy(new_buf + new_offset + 1 + klen, &vlen, 4);
-    memcpy(new_buf + new_offset + 1 + klen + 4, val, vlen);
+    memcpy(new_buf + new_offset + 1 + klen, &vlen32, sizeof(u32)); // EDITED: write 4-byte val_len
+    if (vlen32 > 0) memcpy(new_buf + new_offset + 1 + klen + 4, val, vlen32);
     new_offset += new_entry_size;
 
-    // Update total size
-    *((uint64_t*)new_buf) = new_offset - 4;
+    // Update total size in header (4 bytes)
+    u32 new_total = (u32)(new_offset - 4);
+    memcpy(new_buf, &new_total, sizeof(u32)); // EDITED: safe write
 
     // Write to disk (CoW)
-    uint64_t new_blk_phy = 0;
-    if (write_to_next_free_block(new_buf, &new_blk_phy) != 0) {
-        free(buffer); free(new_buf); inode_unlock(inode); return -EIO;
+    write_ret = write_to_next_free_block(new_buf, &new_blk_phy);
+    if (write_ret != 0) { ret = -EIO; goto out_free_newbuf; } // EDITED: do not free old block until write succeeds
+
+    // At this point write succeeded: free old block (if any), update inode
+    if (blk != 0) {
+        free_data_block(blk); // EDITED: free only after successful write
     }
 
-    // Free old block
-    if (blk != 0) free_data_block(blk);
-
-    // Update inode padding
     set_xattr_block_num(&node, new_blk_phy);
     inode_write_to_disk_private(inode, &node);
 
-    free(buffer);
-    free(new_buf);
+    ret = 0;
+
+out_free_newbuf:
+    if (new_buf) { free(new_buf); new_buf = NULL; }
+out_free_buffer:
+    if (buffer) { free(buffer); buffer = NULL; }
+out_unlock:
     inode_unlock(inode);
-    return 0;
+    return ret;
 }
 
-int inode_getxattr(uint64_t inode, const char* key, const char* val, size_t len) {
+// inode_getxattr: corrected and robust version
+// NOTE: `val` is non-const because we copy into it. // EDITED: changed signature (removed const)
+int inode_getxattr(uint64_t inode, const char* key, char* val, size_t len) {
     inode_lock(inode);
     struct inode node;
     inode_read_from_disk_private(inode, &node);
 
-    uint64_t blk = get_xattr_block_num(&node);
+    u64 blk = get_xattr_block_num(&node);
+    printf("[GETXATTR] inode=%" PRIu64 " blk=%" PRIu64 "\n", inode, blk);
     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
 
-    uint8_t *buffer;
-    create_buffer((void**)&buffer);
-    if (!buffer) { inode_unlock(inode); return -ENOMEM; }
+    uint8_t *buffer = NULL;
+    if (create_buffer((void**)&buffer) != 0 || buffer == NULL) { inode_unlock(inode); return -ENOMEM; }
+    memset(buffer, 0, BYTES_PER_BLOCK);
 
     if (read_data_block(buffer, blk) != 0) {
         free(buffer); inode_unlock(inode); return -EIO;
     }
 
-    uint64_t offset = 4;
-    uint64_t total_size = *((uint64_t*)buffer);
+    u32 total_size = 0;
+    memcpy(&total_size, buffer, sizeof(u32));
+    printf("[GETXATTR] total_size=%u\n", total_size);
 
-    while (offset < total_size + 4 && offset < BYTES_PER_BLOCK) {
+    size_t offset = 4;
+    size_t buffer_limit = BYTES_PER_BLOCK;
+
+    while (offset + 1 <= (size_t)total_size + 4 && offset + 1 < buffer_limit) {
         uint8_t key_len = buffer[offset];
-        char *curr_key = (char*)(buffer + offset + 1);
-        uint64_t val_len = *((uint64_t*)(buffer + offset + 1 + key_len));
-        
-        if (strncmp(curr_key, key, key_len) == 0 && strlen(key) == key_len) {
-            // Found
+        u32 val_len_u32 = 0;
+        memcpy(&val_len_u32, buffer + offset + 1 + key_len, sizeof(u32));
+        size_t val_len = (size_t)val_len_u32;
+
+        const char *curr_key = (const char*)(buffer + offset + 1);
+        const char *curr_val = (const char*)(buffer + offset + 1 + key_len + 4);
+
+        printf("[GETXATTR] entry offset=%zu key_len=%u val_len=%zu key='%.*s'\n",
+               offset, (unsigned)key_len, val_len, (int)key_len, curr_key);
+
+        if (key_len == (uint8_t)strlen(key) && memcmp(curr_key, key, key_len) == 0) {
+            printf("[GETXATTR] MATCH! val_len=%zu\n", val_len);
             if (len == 0) {
-                // Query size
                 free(buffer); inode_unlock(inode); return (int)val_len;
             }
             if (len < val_len) {
                 free(buffer); inode_unlock(inode); return -ERANGE;
             }
-            memcpy((void*)val, buffer + offset + 1 + key_len + 4, val_len);
+            if (val_len > 0) {
+                memcpy(val, curr_val, val_len);
+                // NUL-terminate if caller provided space:
+                if (len > val_len) val[val_len] = '\0';
+            }
+            // print first few bytes for debugging:
+            printf("[GETXATTR] value (first up to 64 bytes): ");
+            for (size_t i = 0; i < val_len && i < 64; ++i) {
+                unsigned char c = (unsigned char)curr_val[i];
+                if (c >= 32 && c < 127) putchar(c);
+                else printf("\\x%02x", c);
+            }
+            putchar('\n');
+
             free(buffer); inode_unlock(inode);
             return (int)val_len;
         }
-        offset += (1 + key_len + 4 + val_len);
+        offset += 1 + key_len + 4 + val_len;
     }
 
     free(buffer);
     inode_unlock(inode);
     return -ENODATA;
 }
+
+// int inode_setxattr(uint64_t inode, const char* key, const char* val, size_t len, int flags) {
+//     if (strlen(key) > 255) return -ENAMETOOLONG;
+
+//     inode_lock(inode);
+//     struct inode node;
+//     inode_read_from_disk_private(inode, &node);
+
+//     uint64_t blk = get_xattr_block_num(&node);
+//     uint8_t *buffer;
+//     create_buffer((void**)&buffer);
+//     if (!buffer) { inode_unlock(inode); return -ENOMEM; }
+//     memset(buffer, 0, BYTES_PER_BLOCK);
+//     printf("Block = %lld\n", blk);
+//     if (blk != 0) {
+//         if (read_data_block(buffer, blk) != 0) {
+//             free(buffer); inode_unlock(inode); return -EIO;
+//         }
+//     }
+
+//     // Simple implementation: Linear scan. 
+//     // We reconstruct the block in a temp buffer to handle add/replace
+//     uint8_t *new_buf;
+//     create_buffer((void**)&new_buf);
+//     if (!new_buf) { free(buffer); inode_unlock(inode); return -ENOMEM; }
+//     memset(new_buf, 0, BYTES_PER_BLOCK);
+
+//     uint64_t old_offset = 4; // skip size header
+//     uint64_t new_offset = 4;
+//     uint64_t total_data_size = *((uint64_t*)buffer);
+//     // int found = 0;
+
+//     // Copy existing entries, skipping if we match key
+//     while (old_offset < total_data_size + 4 && old_offset < BYTES_PER_BLOCK) {
+//         uint8_t key_len = buffer[old_offset];
+//         char *curr_key = (char*)(buffer + old_offset + 1);
+//         uint64_t val_len = *((uint64_t*)(buffer + old_offset + 1 + key_len));
+//         uint64_t entry_size = 1 + key_len + 4 + val_len;
+
+//         if (strncmp(curr_key, key, key_len) == 0 && strlen(key) == key_len) {
+//             // found = 1;
+//             // Skip this entry (we will append new version later)
+//         } else {
+//             // Keep this entry
+//             if (new_offset + entry_size > BYTES_PER_BLOCK) {
+//                 free(buffer); free(new_buf); inode_unlock(inode); return -ENOSPC;
+//             }
+//             memcpy(new_buf + new_offset, buffer + old_offset, entry_size);
+//             new_offset += entry_size;
+//         }
+//         old_offset += entry_size;
+//     }
+
+//     // Append new entry
+//     uint8_t klen = (uint8_t)strlen(key);
+//     uint64_t vlen = (uint64_t)len;
+//     uint64_t new_entry_size = 1 + klen + 4 + vlen;
+
+//     // todo: ?? think about extending into multiple block
+//     if (new_offset + new_entry_size > BYTES_PER_BLOCK) {
+//         free(buffer); free(new_buf); inode_unlock(inode); return -ENOSPC;
+//     }
+
+//     new_buf[new_offset] = klen;
+//     memcpy(new_buf + new_offset + 1, key, klen);
+//     memcpy(new_buf + new_offset + 1 + klen, &vlen, 4);
+//     memcpy(new_buf + new_offset + 1 + klen + 4, val, vlen);
+//     new_offset += new_entry_size;
+
+//     printf("New Offset = %d\n", new_offset);
+
+//     // Update total size
+//     *((uint64_t*)new_buf) = new_offset - 4;
+
+//     // Write to disk (CoW)
+//     uint64_t new_blk_phy = 0;
+//     if (write_to_next_free_block(new_buf, &new_blk_phy) != 0) {
+//         free(buffer); free(new_buf); inode_unlock(inode); return -EIO;
+//     }
+
+//     // Free old block
+//     if (blk != 0) free_data_block(blk);
+
+//     // Update inode padding
+//     set_xattr_block_num(&node, new_blk_phy);
+//     inode_write_to_disk_private(inode, &node);
+
+//     free(buffer);
+//     free(new_buf);
+//     inode_unlock(inode);
+//     return 0;
+// }
+
+// int inode_getxattr(uint64_t inode, const char* key, const char* val, size_t len) {
+//     inode_lock(inode);
+//     struct inode node;
+//     inode_read_from_disk_private(inode, &node);
+
+//     uint64_t blk = get_xattr_block_num(&node);
+//     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
+
+//     uint8_t *buffer;
+//     create_buffer((void**)&buffer);
+//     if (!buffer) { inode_unlock(inode); return -ENOMEM; }
+
+//     if (read_data_block(buffer, blk) != 0) {
+//         free(buffer); inode_unlock(inode); return -EIO;
+//     }
+
+//     printf("Block = %lld\n", blk);
+//     uint64_t offset = 4;
+//     uint64_t total_size = *((uint64_t*)buffer);
+
+//     while (offset < total_size + 4 && offset < BYTES_PER_BLOCK) {
+//         uint8_t key_len = buffer[offset];
+//         char *curr_key = (char*)(buffer + offset + 1);
+//         uint64_t val_len = *((uint64_t*)(buffer + offset + 1 + key_len));
+//         char *curr_val = (char*)(buffer + offset + 1 + key_len + 4);
+
+//         printf("[DEBUG] Offset %u: Key='%.*s' (len %u), Val='%.*s' (len %u)\n", 
+//                offset, 
+//                (int)key_len, curr_key, key_len, 
+//                (int)val_len, curr_val, val_len);
+        
+//         if (strncmp(curr_key, key, key_len) == 0 && strlen(key) == key_len) {
+//             // Found
+//             if (len == 0) {
+//                 // Query size
+//                 free(buffer); inode_unlock(inode); return (int)val_len;
+//             }
+//             if (len < val_len) {
+//                 free(buffer); inode_unlock(inode); return -ERANGE;
+//             }
+//             memcpy((void*)val, buffer + offset + 1 + key_len + 4, val_len);
+//             free(buffer); inode_unlock(inode);
+//             return (int)val_len;
+//         }
+//         offset += (1 + key_len + 4 + val_len);
+//     }
+
+//     free(buffer);
+//     inode_unlock(inode);
+//     return -ENODATA;
+// }
 
 int inode_listxattr(uint64_t inode, char* val, size_t len) {
     inode_lock(inode);
@@ -2168,48 +2364,72 @@ int inode_listxattr(uint64_t inode, char* val, size_t len) {
     uint64_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return 0; }
 
-    uint8_t *buffer;
-    create_buffer((void**)&buffer);
-    if (!buffer) { inode_unlock(inode); return -ENOMEM; }
+    uint8_t *buffer = NULL;
+    if (create_buffer((void**)&buffer) != 0 || buffer == NULL) { inode_unlock(inode); return -ENOMEM; } // EDITED: check create_buffer result
+    memset(buffer, 0, BYTES_PER_BLOCK);
+
     if (read_data_block(buffer, blk) != 0) {
         free(buffer); inode_unlock(inode); return -EIO;
     }
 
-    uint64_t offset = 4;
-    uint64_t total_size = *((uint64_t*)buffer);
+    size_t buffer_limit = BYTES_PER_BLOCK;
+
+    // Read total_size header safely (4 bytes)
+    u32 total_size = 0;
+    memcpy(&total_size, buffer, sizeof(u32)); // EDITED: safe read of 4-byte header
+
+    if (total_size > buffer_limit - 4) { free(buffer); inode_unlock(inode); return -EIO; } // EDITED: sanity check
+
     size_t required_len = 0;
 
-    // First pass: calculate size
-    uint64_t temp_off = 4;
-    while (temp_off < total_size + 4) {
+    // First pass: calculate size (sum of key lengths + NUL terminators)
+    size_t temp_off = 4;
+    while (temp_off + 1 <= (size_t)total_size + 4 && temp_off + 1 < buffer_limit) {
         uint8_t klen = buffer[temp_off];
-        uint64_t vlen = *((uint64_t*)(buffer + temp_off + 1 + klen));
-        required_len += klen + 1; // +1 for null terminator
-        temp_off += (1 + klen + 4 + vlen);
+        size_t min_hdr = 1 + klen + 4;
+        if (temp_off + min_hdr > buffer_limit) { free(buffer); inode_unlock(inode); return -EIO; } // EDITED: bounds
+        u32 vlen_u32 = 0;
+        memcpy(&vlen_u32, buffer + temp_off + 1 + klen, sizeof(u32)); // EDITED: safe read
+        size_t vlen = (size_t)vlen_u32;
+        size_t entry_size = 1 + klen + 4 + vlen;
+        if (temp_off + entry_size > buffer_limit) { free(buffer); inode_unlock(inode); return -EIO; } // EDITED
+        required_len += (size_t)klen + 1; // key + null
+        temp_off += entry_size;
     }
 
     if (len == 0) {
-        free(buffer); inode_unlock(inode); return (int)required_len;
+        free(buffer); inode_unlock(inode);
+        return (int)required_len; // EDITED: return required buffer size
     }
     if (len < required_len) {
         free(buffer); inode_unlock(inode); return -ERANGE;
     }
 
-    // Second pass: copy keys
+    // Second pass: copy null-terminated keys into val
     char *dest = val;
-    while (offset < total_size + 4) {
+    size_t offset = 4;
+    while (offset + 1 <= (size_t)total_size + 4 && offset + 1 < buffer_limit) {
         uint8_t klen = buffer[offset];
-        memcpy(dest, buffer + offset + 1, klen);
+        size_t min_hdr = 1 + klen + 4;
+        if (offset + min_hdr > buffer_limit) { free(buffer); inode_unlock(inode); return -EIO; } // EDITED
+        // Copy key
+        if (klen > 0) memcpy(dest, buffer + offset + 1, klen);
         dest[klen] = '\0';
         dest += (klen + 1);
-        uint64_t vlen = *((uint64_t*)(buffer + offset + 1 + klen));
-        offset += (1 + klen + 4 + vlen);
+        // Advance offset
+        u32 vlen_u32 = 0;
+        memcpy(&vlen_u32, buffer + offset + 1 + klen, sizeof(u32)); // EDITED
+        size_t vlen = (size_t)vlen_u32;
+        size_t entry_size = 1 + klen + 4 + vlen;
+        if (offset + entry_size > buffer_limit) { free(buffer); inode_unlock(inode); return -EIO; } // EDITED
+        offset += entry_size;
     }
 
     free(buffer);
     inode_unlock(inode);
-    return (int)required_len;
+    return (int)required_len; // EDITED: return copied length
 }
+
 
 int inode_removexattr(uint64_t inode, const char* key) {
     inode_lock(inode);
@@ -2219,34 +2439,46 @@ int inode_removexattr(uint64_t inode, const char* key) {
     uint64_t blk = get_xattr_block_num(&node);
     if (blk == 0) { inode_unlock(inode); return -ENODATA; }
 
-    uint8_t *buffer;
-    create_buffer((void**)&buffer);
-    if (!buffer) { inode_unlock(inode); return -ENOMEM; }
+    uint8_t *buffer = NULL;
+    if (create_buffer((void**)&buffer) != 0 || buffer == NULL) { inode_unlock(inode); return -ENOMEM; } // EDITED: check create_buffer result
+    memset(buffer, 0, BYTES_PER_BLOCK);
+
     if (read_data_block(buffer, blk) != 0) {
         free(buffer); inode_unlock(inode); return -EIO;
     }
 
-    uint8_t *new_buf;
-    create_buffer((void**)&new_buf); 
-    
-    if (!new_buf) { free(buffer); inode_unlock(inode); return -ENOMEM; }
+    uint8_t *new_buf = NULL;
+    if (create_buffer((void**)&new_buf) != 0 || new_buf == NULL) { free(buffer); inode_unlock(inode); return -ENOMEM; } // EDITED
     memset(new_buf, 0, BYTES_PER_BLOCK);
 
-    uint64_t old_offset = 4;
-    uint64_t new_offset = 4;
-    uint64_t total_data_size = *((uint64_t*)buffer);
+    size_t buffer_limit = BYTES_PER_BLOCK;
+
+    // Read total_data_size safely (4 bytes)
+    u32 total_data_size_u32 = 0;
+    memcpy(&total_data_size_u32, buffer, sizeof(u32)); // EDITED
+    if (total_data_size_u32 > buffer_limit - 4) { free(buffer); free(new_buf); inode_unlock(inode); return -EIO; } // EDITED
+    size_t total_data_size = (size_t)total_data_size_u32;
+
+    size_t old_offset = 4;
+    size_t new_offset = 4;
     int found = 0;
 
-    while (old_offset < total_data_size + 4) {
+    while (old_offset + 1 <= total_data_size + 4 && old_offset + 1 < buffer_limit) {
         uint8_t key_len = buffer[old_offset];
-        char *curr_key = (char*)(buffer + old_offset + 1);
-        uint64_t val_len = *((uint64_t*)(buffer + old_offset + 1 + key_len));
-        uint64_t entry_size = 1 + key_len + 4 + val_len;
+        size_t min_hdr = 1 + key_len + 4;
+        if (old_offset + min_hdr > buffer_limit) { free(buffer); free(new_buf); inode_unlock(inode); return -EIO; } // EDITED
+        const char *curr_key = (const char*)(buffer + old_offset + 1);
+        u32 vlen_u32 = 0;
+        memcpy(&vlen_u32, buffer + old_offset + 1 + key_len, sizeof(u32)); // EDITED
+        size_t val_len = (size_t)vlen_u32;
+        size_t entry_size = 1 + key_len + 4 + val_len;
+        if (old_offset + entry_size > buffer_limit) { free(buffer); free(new_buf); inode_unlock(inode); return -EIO; } // EDITED
 
-        if (strncmp(curr_key, key, key_len) == 0 && strlen(key) == key_len) {
+        if (key_len == (uint8_t)strlen(key) && memcmp(curr_key, key, key_len) == 0) {
             found = 1;
-            // Skip -> removes it
+            // Skip entry to remove it
         } else {
+            if (new_offset + entry_size > buffer_limit) { free(buffer); free(new_buf); inode_unlock(inode); return -ENOSPC; } // EDITED
             memcpy(new_buf + new_offset, buffer + old_offset, entry_size);
             new_offset += entry_size;
         }
@@ -2257,14 +2489,20 @@ int inode_removexattr(uint64_t inode, const char* key) {
         free(buffer); free(new_buf); inode_unlock(inode); return -ENODATA;
     }
 
-    *((uint64_t*)new_buf) = new_offset - 4;
+    // Write new total size (4 bytes) safely
+    u32 new_total = (u32)(new_offset - 4);
+    memcpy(new_buf, &new_total, sizeof(u32)); // EDITED
 
+    // CoW write
     uint64_t new_blk_phy = 0;
     if (write_to_next_free_block(new_buf, &new_blk_phy) != 0) {
         free(buffer); free(new_buf); inode_unlock(inode); return -EIO;
     }
 
-    free_data_block(blk);
+    // Free old block only after successful write
+    free_data_block(blk); // EDITED
+
+    // Update inode and write it out
     set_xattr_block_num(&node, new_blk_phy);
     inode_write_to_disk_private(inode, &node);
 
@@ -2273,7 +2511,6 @@ int inode_removexattr(uint64_t inode, const char* key) {
     inode_unlock(inode);
     return 0;
 }
-
 
 int inode_link(uint64_t src_inum, const char *newpath) {
     // 1. Parse newpath parent/base

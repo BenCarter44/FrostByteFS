@@ -357,63 +357,82 @@ int frostbyte_chown(const char* path, uid_t user, gid_t group, struct fuse_file_
 
 int frostbyte_setxattr(const char* path, const char* key, const char* val, size_t len, int fint) 
 {
-    int inode = 0;
-    inode = inode_find_by_path(path);
+    int inode = inode_find_by_path(path);
     if (inode < 0) {
         return inode;
     }
 
     inode_setxattr(inode, key, val, len, fint);
 
-    printf("frostbyte_setxattr(path=\"%s\", key=\"%s\", val=\"%s\", len=%zu, fint=%d)\n",
-           path, key, val, len, fint);
+    printf("frostbyte_setxattr(path=\"%s\", key=\"%s\", len=%zu, fint=%d, val_hex=",
+           path, key, len, fint);
+
+    // print first up to 16 bytes
+    size_t print_len = len < 16 ? len : 16;
+    for (size_t i = 0; i < print_len; i++) {
+        printf("%02x", (unsigned char)val[i]);
+    }
+    if (len > 16) printf("...");
+
+    printf(")\n");
     return 0;
 }
 
 int frostbyte_getxattr(const char* path, const char* key, char* val, size_t len) 
 {
-    int inode = 0;
-    inode = inode_find_by_path(path);
+    int inode = inode_find_by_path(path);
     if (inode < 0) {
         return inode;
     }
 
-    inode_getxattr(inode, key, val, len);
+    int ret = inode_getxattr(inode, key, val, len);
 
-    printf("frostbyte_getxattr(path=\"%s\", key=\"%s\", val=%p, len=%zu)\n",
-           path, key, (void*)val, len);
-    return 0;
+    printf("frostbyte_getxattr(path=\"%s\", key=\"%s\", val=%p, len=%zu) -> ret=%d\n",
+           path, key, (void*)val, len, ret);
+
+    return ret;   
 }
 
+// int frostbyte_getxattr(const char* path, const char* key, char* val, size_t len) 
+// {
+//     int inode = 0;
+//     inode = inode_find_by_path(path);
+//     if (inode < 0) {
+//         return inode;
+//     }
+
+//     inode_getxattr(inode, key, val, len);
+
+//     printf("frostbyte_getxattr(path=\"%s\", key=\"%s\", val=%p, len=%zu)\n",
+//            path, key, (void*)val, len);
+//     return 0;
+// }
 int frostbyte_listxattr(const char* path, char* val, size_t len) 
 {
-    int inode = 0;
-    inode = inode_find_by_path(path);
+    int inode = inode_find_by_path(path);
     if (inode < 0) {
         return inode;
     }
 
-    inode_listxattr(inode, val, len);
-
-    printf("frostbyte_listxattr(path=\"%s\", val=%p, len=%zu)\n",
-           path, (void*)val, len);
-    return 0;
+    int ret = inode_listxattr(inode, val, len);
+    printf("frostbyte_listxattr(path=\"%s\", val=%p, len=%zu) -> ret=%d\n",
+           path, (void*)val, len, ret); 
+    return ret;
 }
 
 int frostbyte_removexattr(const char* path, const char* key) 
 {
-    int inode = 0;
-    inode = inode_find_by_path(path);
+    int inode = inode_find_by_path(path);
     if (inode < 0) {
         return inode;
     }
 
-    inode_removexattr(inode, key);
-
-    printf("frostbyte_removexattr(path=\"%s\", key=\"%s\")\n",
-           path, key);
-    return 0;
+    int ret = inode_removexattr(inode, key); 
+    printf("frostbyte_removexattr(path=\"%s\", key=\"%s\") -> ret=%d\n",
+           path, key, ret);
+    return ret;
 }
+
 
 // int frostbyte_check_access(const char* path, int perm) 
 // {

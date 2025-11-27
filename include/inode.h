@@ -128,7 +128,7 @@ int inode_chmod(uint64_t inode, mode_t fmode);
 
 int inode_rmdir(const char *path, bool ignore_lock);
 int inode_setxattr(uint64_t inode, const char* key, const char* val, size_t len, int fint);
-int inode_getxattr(uint64_t inode, const char* key, const char* val, size_t len);
+int inode_getxattr(uint64_t inode, const char* key, char* val, size_t len);
 int inode_listxattr(uint64_t inode, char* val, size_t len);
 int inode_removexattr(uint64_t inode, const char* key);
 
