@@ -15,6 +15,10 @@ void init_allocator()
 
 static uint64_t speed_free = 0;
 
+#define FREE_CACHE_SIZE 64
+static uint64_t free_block_cache[FREE_CACHE_SIZE];
+static int free_cache_count = 0;
+
 void gdb_break_alloc()
 {
     return;
@@ -197,12 +201,16 @@ int free_data_block(uint64_t block_number)
 
 static int search_for_next_free_block(uint64_t* block_number)
 {
-    // slow simple way....
-    // scan entire reference list to find the first 0.
-    // later.... I can cache this.
+    if (free_cache_count > 0)
+    {
+        *block_number = free_block_cache[--free_cache_count];
+        return 0;
+    }
+
     uint8_t* buffer;
     create_buffer((void**)&buffer);
     bool first_time = true;
+
     for(uint64_t block_index = speed_free / BYTES_PER_BLOCK; block_index < REF_BLOCKS; block_index++)
     {
         int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + block_index);
@@ -211,28 +219,84 @@ static int search_for_next_free_block(uint64_t* block_number)
             free_buffer(buffer);
             return ret;
         }
+
         uint64_t start = 0;
         if(first_time)
         {
             start = speed_free % BYTES_PER_BLOCK;
             first_time = false;
         }
+
         for(uint64_t byte_index = start; byte_index < BYTES_PER_BLOCK; byte_index++)
         {
             uint8_t ref_count = buffer[byte_index];
-            if(ref_count == 0) // 254 is full. 255 is invalid
+            if(ref_count == 0) 
             {
-                // is free! 
-                *(block_number) = byte_index + block_index * BYTES_PER_BLOCK;
-                speed_free = *(block_number);
-                free_buffer(buffer);
-                return 0;
+                uint64_t found_block = byte_index + block_index * BYTES_PER_BLOCK;
+                free_block_cache[free_cache_count++] = found_block;
+                speed_free = found_block + 1;
+
+                if(free_cache_count >= FREE_CACHE_SIZE)
+                {
+                    free_buffer(buffer);
+                    *block_number = free_block_cache[--free_cache_count];
+                    return 0;
+                }
             }
         }
+
+        if (free_cache_count > 0) break;
     }
+
     free_buffer(buffer);
+
+    if (free_cache_count > 0)
+    {
+        *block_number = free_block_cache[--free_cache_count];
+        return 0;
+    }
+
     return -ALLOCATOR_OUT_OF_SPACE;
 }
+
+// static int search_for_next_free_block(uint64_t* block_number)
+// {
+//     // slow simple way....
+//     // scan entire reference list to find the first 0.
+//     // later.... I can cache this.
+//     uint8_t* buffer;
+//     create_buffer((void**)&buffer);
+//     bool first_time = true;
+//     for(uint64_t block_index = speed_free / BYTES_PER_BLOCK; block_index < REF_BLOCKS; block_index++)
+//     {
+//         int ret = read_block_raw(buffer, REFERENCE_BASE_BLOCK + block_index);
+//         if(ret < 0)
+//         {
+//             free_buffer(buffer);
+//             return ret;
+//         }
+//         uint64_t start = 0;
+//         if(first_time)
+//         {
+//             start = speed_free % BYTES_PER_BLOCK;
+//             first_time = false;
+//         }
+//         for(uint64_t byte_index = start; byte_index < BYTES_PER_BLOCK; byte_index++)
+//         {
+//             uint8_t ref_count = buffer[byte_index];
+//             if(ref_count == 0) // 254 is full. 255 is invalid
+//             {
+//                 // is free! 
+//                 *(block_number) = byte_index + block_index * BYTES_PER_BLOCK;
+//                 speed_free = *(block_number);
+//                 free_buffer(buffer);
+//                 return 0;
+//             }
+//         }
+//     }
+//     free_buffer(buffer);
+//     return -ALLOCATOR_OUT_OF_SPACE;
+// }
 
 
 // Copy on write.... write to next free block
