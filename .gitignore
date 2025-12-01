@@ -4,6 +4,9 @@ fuse-3.17.4/
 testfs/
 frost
 
+actual.txt
+found.txt
+
 # Prerequisites
 *.d
 

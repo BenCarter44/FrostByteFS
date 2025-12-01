@@ -28,7 +28,7 @@ int frostbyte_mkdir(const char *path, mode_t mode)
     // struct fuse_context *ctx = fuse_get_context();
     
     // --- Call the iNode layer's create function (L2) ---
-    uint32_t inode = 0;
+    uint64_t inode = 0;
     int r = inode_create(path, mode | S_IFDIR, &inode);
     return r;
 } 
@@ -37,7 +37,7 @@ int frostbyte_rmdir(const char *path)
     printf("L3 (FUSE): frost_rmdir('%s') called.\n", path);
     
     // --- Call the iNode layer's rmdir function (L2) ---
-    return inode_rmdir(path);
+    return inode_rmdir(path, 0);
 }
 
 int frostbyte_opendir(const char *path, struct fuse_file_info *fi)
@@ -77,6 +77,11 @@ int frostbyte_fsyncdir(const char *path, int datasync, struct fuse_file_info *fi
 {
     printf("frostbyte_fsyncdir(path=\"%s\", datasync=%d)\n", path, datasync);
     print_fuse_info(fi);
+    int r = fsync_disk();
+    if(r < 0)
+    {
+        return -EIO;
+    }
     return 0;
 }
 
@@ -100,7 +105,7 @@ int frostbyte_symlink(const char *target, const char *linkpath)
 {
     printf("L3: frostbyte_symlink target='%s' linkpath='%s'\n", target, linkpath);
     
-    uint32_t inum = 0;
+    uint64_t inum = 0;
     // 1. Create inode with S_IFLNK
     int res = inode_create(linkpath, S_IFLNK | 0777, &inum);
     if (res != 0) return res;
@@ -118,7 +123,7 @@ int frostbyte_readlink(const char *path, char *buf, size_t size)
 {
     printf("L3: frostbyte_readlink path='%s'\n", path);
     
-    uint32_t inum = inode_find_by_path(path);
+    uint64_t inum = inode_find_by_path(path);
     if ((int)inum < 0) return (int)inum;
 
     // 1. Read the data (the target path)
@@ -139,6 +144,6 @@ int frostbyte_hardlink(const char *oldpath, const char *newpath)
     if (inum < 0) return inum;
 
     // 2. Call inode layer helper
-    return inode_link((uint32_t)inum, newpath);
+    return inode_link((uint64_t)inum, newpath);
 }
 

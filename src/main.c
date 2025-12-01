@@ -6,6 +6,7 @@
 #ifndef COMPILE_FOR_TESTS
 #include "fusefile.h"
 #include "fusespecial.h"
+#include "allocator.h"
 
 #include <sys/statvfs.h>
 
@@ -28,7 +29,7 @@ void* frost_init(struct fuse_conn_info *conn,
         fprintf(stderr, "FATAL: Failed to open disk image: %s\n", disk_path);
         exit(1); // Cannot continue if disk won't open
     }
-
+    init_allocator();
     // --- 2. Check if disk is formatted (L1) ---
     if (!allocator_check_valid_super_block()) {
         printf("L3 (FUSE): Unformatted disk. Formatting...\n");
@@ -121,7 +122,10 @@ const struct fuse_operations frost_oper = {
     .write        = frostbyte_write,
     // .bmap    = frostbyte_map_raw,
     // .fallocate     = frostbyte_allocate,
-    .copy_file_range = frostbyte_copy_file_range
+    // .copy_file_range = frostbyte_copy_file_range,
+    .utimens = frostbyte_utimens,
+    .link = frostbyte_link
+
 };
 
 

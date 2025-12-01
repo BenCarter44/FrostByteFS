@@ -64,6 +64,8 @@ int main(int argc, char** argv)
     create_buffer((void**)&buffer);
     clear_buffer();
 
+    init_allocator();
+
     // check if disk formatted.
     bool val = allocator_check_valid_super_block();
     // put other checks here for the upper layers.
@@ -97,7 +99,7 @@ int main(int argc, char** argv)
     create_data();
 
     // write test.
-    uint32_t block_number;
+    uint64_t block_number;
     int r = write_to_next_free_block(buffer, &block_number);
     printf("Wrote data to data block %u\n",block_number);
     printf("Result: %s\n", allocator_error_to_string(r));
@@ -129,7 +131,7 @@ int main(int argc, char** argv)
 
     // use ALL of space
     create_data();
-    for(uint32_t i = 0; i < DATA_BLOCKS; i++)
+    for(uint64_t i = 0; i < DATA_BLOCKS; i++)
     {
         printf("Writing %u / %u  \r", i, DATA_BLOCKS);
         fflush(stdout);
@@ -146,7 +148,7 @@ int main(int argc, char** argv)
 
     // do some frees.
     printf("Do some frees\n");
-    for(uint32_t i = 0; i < DATA_BLOCKS; i += 8)
+    for(uint64_t i = 0; i < DATA_BLOCKS; i += 8)
     {
         r = free_data_block(i);
     //    printf("Freed data to data block %u\n",i);

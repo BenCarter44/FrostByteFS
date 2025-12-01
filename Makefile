@@ -8,7 +8,10 @@ CC = gcc
 # -Wall: Enable all warnings
 # -Iheader: Look in 'header' directory for .h files
 # `pkg-config...`: Get all FUSE flags and libraries
-CFLAGS = -Wall -Iinclude `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64 -lpthread
+# CFLAGS = -Wall -Iinclude `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64 -lpthread
+
+# DEBUG
+CFLAGS = -Wall -Iinclude -O0 -g `pkg-config fuse3 --cflags --libs` -Wl,-rpath=/usr/local/lib64 -lpthread
 
 # Source files
 SRCS = src/*.c
