@@ -1,3 +1,14 @@
+/**
+ * @file rawdisk.c
+ * @author Benjamin Carter
+ * @brief This covers all direct operations to the disk device.
+ * @version 0.1
+ * @date 2025-10-22
+ * 
+ * @copyright Copyright (c) 2025 Towhidul Islam, Sohaib, Benjamin Carter
+ * 
+ */
+
 #include "rawdisk.h"
 #include <fcntl.h>
 

@@ -1,3 +1,14 @@
+/**
+ * @file error.h
+ * @author Benjamin Carter, Towhidul Islam, Sohaib
+ * @brief Error Codes for custom errors in the lower layers.
+ * @version 0.1
+ * @date 2025-12-02
+ * 
+ * @copyright Copyright (c) 2025 Benjamin Carter, Towhidul Islam, Sohaib
+ * 
+ */
+
 #ifndef ERROR_CODES_H
 #define ERROR_CODES
 
@@ -16,7 +27,7 @@ const char* raw_disk_error_to_string(int err);
 #define ALLOCATOR_OUT_OF_BOUNDS 7
 const char* allocator_error_to_string(int err);
 
-// File Layer Errors
+// Inode Layer Errors
 #define FILE_NOT_FOUND 9
 
 

@@ -1,3 +1,13 @@
+/**
+ * @file inode.h
+ * @author Towhidul Islam, Sohaib, Benjamin Carter
+ * @brief Inode Layer Implementation
+ * @version 0.1
+ * @date 2025-12-02
+ * 
+ * @copyright Copyright (c) 2025 Towhidul Islam, Sohaib, Benjamin Carter
+ * 
+ */
 #ifndef FROST_INODE_H_
 #define FROST_INODE_H_
 

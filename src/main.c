@@ -1,3 +1,13 @@
+/**
+ * @file main.c
+ * @author Towhidul Islam, Sohaib, Benjamin Carter
+ * @version 0.1
+ * @date 2025-12-02
+ * 
+ * @copyright Copyright (c) 2025 Towhidul Islam, Sohaib, Benjamin Carter
+ * 
+ */
+
 /*
  * This file contains the main() function for the 'frost' filesystem.
  * It handles command-line option parsing and starting the FUSE main loop.
@@ -175,6 +185,7 @@ int main(int argc, char *argv[])
 
     fuse_opt_add_arg(&args, "-o");
     fuse_opt_add_arg(&args, "default_permissions");
+    fuse_opt_add_arg(&args, "-s");
 
     /* When --help is specified, first print our own file-system
        specific help text, then signal fuse_main to show

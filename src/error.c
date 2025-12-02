@@ -1,3 +1,13 @@
+/**
+ * @file error.c
+ * @author Benjamin Carter, Towhidul Islam, Sohaib
+ * @brief Error Codes for custom errors in the lower layers.
+ * @version 0.1
+ * @date 2025-12-02
+ * 
+ * @copyright Copyright (c) 2025 Benjamin Carter, Towhidul Islam, Sohaib
+ * 
+ */
 #include "error.h"
 
 const char* raw_disk_error_to_string(int err) {

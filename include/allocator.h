@@ -1,11 +1,11 @@
 /**
  * @file allocator.h
- * @author your name (you@domain.com)
- * @brief 
+ * @author Benjamin Carter
+ * @brief Allocator Layer, responsible for free's and store's
  * @version 0.1
  * @date 2025-11-04
  * 
- * @copyright Copyright (c) 2025
+ * @copyright Copyright (c) 2025 Benjamin Carter, Towhidul Islam, Sohaib
  * 
  */
 

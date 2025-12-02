@@ -1,3 +1,14 @@
+/**
+ * @file inode.c
+ * @author Towhidul Islam, Sohaib, Benjamin Carter
+ * @brief Inode Layer Implementation
+ * @version 0.1
+ * @date 2025-12-02
+ * 
+ * @copyright Copyright (c) 2025 Towhidul Islam, Sohaib, Benjamin Carter
+ * 
+ */
+
 /* 
  * Layer 2: inode management with CoW pointer-tree, directories,
  * and indirect addressing (direct / single / double / triple).

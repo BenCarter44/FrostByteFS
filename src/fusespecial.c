@@ -1,3 +1,14 @@
+/**
+ * @file fusespecial.h
+ * @author Benjamin Carter, Towhidul Islam, Sohaib
+ * @brief Handles directory and link callbacks
+ * @version 0.1
+ * @date 2025-12-02
+ * 
+ * @copyright Copyright (c) 2025 Benjamin Carter, Towhidul Islam, Sohaib
+ * 
+ */
+
 #include "fusespecial.h"
 #include <stdio.h>
 #include <stdlib.h>
