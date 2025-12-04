@@ -1,6 +1,10 @@
 # FrostByteFS
 A FUSE file system implementation
 
+By Ben Carter, Towhid Islam, and Sohaib  -- 2025
+
+---
+
 This is a inode-based filesystem designed for copy-on-write.
 It is broken into 4 layers:
 1. rawdisk -- raw disk I/O
